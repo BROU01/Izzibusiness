@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450" role="img" aria-label="Assistant Virtuel">
+  <defs>
+  <pattern id="grid-va" width="24" height="24" patternUnits="userSpaceOnUse">
+    <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#14120d" stroke-opacity="0.05" stroke-width="1"/>
+  </pattern></defs>
+
+  <!-- Fond papier + grille millimétrée -->
+  <rect width="800" height="450" fill="#f5f1e6"/>
+  <rect width="800" height="450" fill="url(#grid-va)"/>
+
+  <!-- Grande initiale en filigrane, côté droit -->
+  <text x="744" y="394" text-anchor="end" font-family="Fraunces, Georgia, serif" font-weight="900" font-size="280" letter-spacing="-8" fill="#14120d" fill-opacity="0.08">A</text>
+
+  <!-- Bordure épaisse néobrutalisme -->
+  <rect x="1.5" y="1.5" width="797" height="447" fill="none" stroke="#14120d" stroke-width="3"/>
+
+  <!-- Filet d'accent gauche (6px, comme CourseImage) -->
+  <rect x="0" y="0" width="6" height="450" fill="#2b59ff"/>
+
+  <!-- Bandeau haut : catégorie générique + annotation -->
+  <rect x="6" y="0" width="794" height="56" fill="#eae4d3"/>
+  <line x1="6" y1="56" x2="800" y2="56" stroke="#14120d" stroke-width="2"/>
+  <text x="40" y="36" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="15" font-weight="700" letter-spacing="3" fill="#14120d">FORMATION</text>
+  <text x="760" y="36" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="15" font-weight="500" letter-spacing="2" fill="#14120d" fill-opacity="0.6">IZZIBUSINESS ACADEMY</text>
+
+  <!-- Titre -->
+  <text x="56" y="380" font-family="Fraunces, Georgia, serif" font-weight="900" font-size="56" letter-spacing="-1" fill="#14120d">Assistant Virtuel</text>
+
+  <!-- Annotation bas gauche -->
+  <text x="56" y="422" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="14" font-weight="500" letter-spacing="2" fill="#14120d" fill-opacity="0.6">MODULE DE FORMATION</text>
+</svg>

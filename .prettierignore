@@ -1,0 +1,19 @@
+# Dépendances et build
+node_modules
+.next
+out
+build
+
+# Données et migrations (SQL non géré par Prettier)
+supabase
+
+# Fichiers générés ou non formatés volontairement
+package-lock.json
+*.min.js
+*.min.css
+
+# Documentation externe embarquée
+skills
+
+# Fichiers d'environnement
+.env*

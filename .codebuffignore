@@ -1,0 +1,25 @@
+# Secrets et variables locales
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Dépendances et sorties générées
+node_modules/
+dist/
+build/
+.next/
+coverage/
+.vite/
+.cache/
+
+# Fichiers lourds ou temporaires
+*.zip
+*.tar
+*.gz
+*.mp4
+*.mov
+*.psd
+.DS_Store
