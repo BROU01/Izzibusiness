@@ -46,3 +46,6 @@ next-env.d.ts
 /skills
 --width
 
+# GitHub workflows (temporairement ignoré pour push sans scope workflow)
+.github/workflows/*.yml
+
