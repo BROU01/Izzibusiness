@@ -1,10 +1,25 @@
-# Izzibusiness — plateforme fitness (Next.js)
+# Izzibusiness — Plateforme Fitness & Gamification
+
+![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)
+![React](https://img.shields.io/badge/React-19-black?style=flat-square&logo=react)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=flat-square&logo=typescript)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38bdf8?style=flat-square&logo=tailwind-css)
+![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ecf8e?style=flat-square&logo=supabase)
 
 Application Next.js 16 (App Router) : programmes sportifs, suivi de progression,
-portefeuille avec dépôts/retraits mobile money (Kkiapay, Beem, PawaPay),
-back-office admin.
+gamification (leaderboard, jeux), portefeuille avec dépôts/retraits mobile money
+(Kkiapay, Beem, PawaPay), back-office admin.
 
 > Pour un agent IA travaillant sur ce dépôt, commence par [`CLAUDE.md`](./CLAUDE.md).
+
+## Fonctionnalités
+
+- **Programmes sportifs** : création et suivi de programmes d'entraînement personnalisés
+- **Gamification** : leaderboard, jeux, système de points et badges
+- **Portefeuille** : dépôts et retraits via mobile money (Kkiapay, Beem, PawaPay)
+- **Back-office admin** : gestion des utilisateurs, programmes, transactions
+- **Authentification** : inscription, connexion, récupération de mot de passe
+- **Design system** : néobrutalisme × paper-newsletter, responsive et accessible
 
 ## Stack
 
@@ -71,3 +86,17 @@ Le workflow `.github/workflows/ci.yml` exécute à chaque push et pull request :
 3. Vérifier : `npm run format:check && npm run typecheck && npm run lint && npm run build`.
 4. Une modification = une intention ; ne pas réécrire un composant existant sans
    vérifier les abstractions en place.
+
+## Design System
+
+Le projet utilise un design system « Néobrutalisme × Paper-Newsletter » détaillé dans
+[`DESIGN.md`](./DESIGN.md) :
+
+- **Couleurs** : papier chaud (#F5F1E6), encre noire (#14120D), accents (acid, flame, grass, sky)
+- **Typographie** : Fraunces (display/body), IBM Plex Mono (annotations)
+- **Géométrie** : aucun arrondi, bordures nettes, ombres dures décalées
+- **Texture** : fond papier avec grille millimétrée subtile
+
+## Licence
+
+MIT
