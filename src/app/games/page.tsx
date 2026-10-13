@@ -191,25 +191,13 @@ export default function GamesPage() {
             </div>
 
             {selectedGame === 'aviator' && (
-              <Aviator
-                balance={displayBalance}
-                    onBet={placeBet}
-                onWin={collectWin}
-              />
+              <Aviator balance={displayBalance} onBet={placeBet} onWin={collectWin} />
             )}
             {selectedGame === 'spin' && (
-              <SpinAndWin
-                balance={displayBalance}
-                    onBet={placeBet}
-                onWin={collectWin}
-              />
+              <SpinAndWin balance={displayBalance} onBet={placeBet} onWin={collectWin} />
             )}
             {selectedGame === 'apple' && (
-              <AppleFortunes
-                balance={displayBalance}
-                    onBet={placeBet}
-                onWin={collectWin}
-              />
+              <AppleFortunes balance={displayBalance} onBet={placeBet} onWin={collectWin} />
             )}
           </div>
 

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { isSupabaseConfigured } from '@/lib/demo';
+import { getSupabasePublicEnv } from '@/lib/supabase/env';
 
 /**
  * Progression du programme 20 jours — DUAL MODE.
@@ -33,7 +33,7 @@ let cachedCompleted: number[] | null = null;
 let supabaseSync: Promise<void> | null = null;
 
 export function isSupabaseProgressEnabled(): boolean {
-  return isSupabaseConfigured();
+  return getSupabasePublicEnv() !== null;
 }
 
 // ---------------------------------------------------------------------------
@@ -209,12 +209,20 @@ export async function toggleDayCompleted(day: number): Promise<void> {
 
   try {
     const supabase = createBrowserClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
     if (isCompleted) {
-      await supabase.from('program_progress').delete().eq('day', day);
+      await supabase.from('program_progress').delete().eq('user_id', user.id).eq('day', day);
     } else {
+      // La contrainte unique est (user_id, day) : user_id doit être fourni (RLS).
       await supabase
         .from('program_progress')
-        .upsert({ day, completed_at: updated[day] }, { onConflict: 'day' });
+        .upsert(
+          { user_id: user.id, day, completed_at: updated[day] },
+          { onConflict: 'user_id,day' },
+        );
     }
   } catch {
     // Échec réseau : le miroir local garde l'état optimiste ; la prochaine

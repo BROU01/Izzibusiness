@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { getDemoPhone } from '@/lib/demo-client';
 
 interface WalletState {
   balance: number;
@@ -38,10 +37,7 @@ export function useWallet() {
   // les mises à jour ne se font qu'après réponse (pas de setState synchrone).
   const fetchWallet = useCallback(async () => {
     try {
-      const demoPhone = getDemoPhone();
-      const response = await fetch(
-        `/api/wallet${demoPhone ? `?phone=${encodeURIComponent(demoPhone)}` : ''}`,
-      );
+      const response = await fetch('/api/wallet');
       const data = await response.json();
 
       if (data.success) {
@@ -75,8 +71,6 @@ export function useWallet() {
 
       const params = new URLSearchParams({ limit: limit.toString() });
       if (type) params.append('type', type);
-      const demoPhone = getDemoPhone();
-      if (demoPhone) params.append('phone', demoPhone);
 
       const response = await fetch(`/api/wallet/transactions?${params}`);
       const data = await response.json();
@@ -97,7 +91,7 @@ export function useWallet() {
       const response = await fetch('/api/wallet/game', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'bet', amount, game, phone: getDemoPhone() }),
+        body: JSON.stringify({ action: 'bet', amount, game }),
       });
 
       const data = await response.json();
@@ -125,7 +119,7 @@ export function useWallet() {
         const response = await fetch('/api/wallet/game', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'win', amount, game, multiplier, phone: getDemoPhone() }),
+          body: JSON.stringify({ action: 'win', amount, game, multiplier }),
         });
 
         const data = await response.json();
@@ -160,7 +154,6 @@ export function useWallet() {
             amount,
             game,
             multiplier,
-            phone: getDemoPhone(),
           }),
         });
 
@@ -190,10 +183,7 @@ export function useWallet() {
     let cancelled = false;
     void (async () => {
       try {
-        const demoPhone = getDemoPhone();
-        const response = await fetch(
-          `/api/wallet${demoPhone ? `?phone=${encodeURIComponent(demoPhone)}` : ''}`,
-        );
+        const response = await fetch('/api/wallet');
         const data = await response.json();
         if (cancelled) return;
         if (data.success) {

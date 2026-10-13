@@ -50,9 +50,11 @@
   --shadow: 6px 6px 0 var(--ink);
   --shadow-sm: 3px 3px 0 var(--ink);
 
-  /* Typographie */
+  /* Typographie : Fraunces pour lire (titres + texte courant),
+     IBM Plex Mono pour la voix « étiquette » (boutons, badges, rubriques). */
   --font-display: 'Fraunces', 'Georgia', serif;
-  --font-body: 'IBM Plex Mono', 'SFMono-Regular', monospace;
+  --font-body: 'Fraunces', 'Georgia', serif;
+  --font-mono: 'IBM Plex Mono', 'SFMono-Regular', monospace;
 }
 
 * {
@@ -67,8 +69,8 @@ body {
   background-color: var(--paper);
   color: var(--ink);
   font-family: var(--font-body);
-  font-size: 0.9375rem;
-  line-height: 1.65;
+  font-size: 1rem;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   /* Grille millimétrée : 1 carreau = 1 unité (24px) */
   background-image:
@@ -119,7 +121,7 @@ video {
   color: var(--ink);
   border: var(--line) solid var(--ink);
   border-radius: var(--radius);
-  font-family: var(--font-body);
+  font-family: var(--font-mono);
   font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -219,7 +221,7 @@ video {
   background: var(--paper);
   border: 2px solid var(--ink);
   border-radius: var(--radius);
-  font-family: var(--font-body);
+  font-family: var(--font-mono);
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -269,7 +271,7 @@ video {
 /* ---------- Utilitaires maison ---------- */
 
 .eyebrow {
-  font-family: var(--font-body);
+  font-family: var(--font-mono);
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.14em;

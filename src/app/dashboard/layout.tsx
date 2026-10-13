@@ -4,42 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import Logo from '@/components/Logo';
-import { clearDemoPhone, getDemoPhone } from '@/lib/demo-client';
-
-/**
- * Garde d'entrée du dashboard.
- *
- * - Mode démo : une session = un téléphone en localStorage (demo-client).
- *   Sans téléphone, redirection vers /register avec retour ici après connexion.
- * - Mode Supabase (production) : la garde autorise le rendu ; la protection
- *   réelle repose sur RLS côté données, et le middleware Supabase reste le
- *   point d'intégration pour une garde serveur quand les sessions seront actives.
- */
-function useDashboardGuard(): boolean {
-  const router = useRouter();
-  const [checked, setChecked] = useState(false);
-
-  useEffect(() => {
-    // getDemoPhone lit localStorage : uniquement côté client (après montage).
-    // Lecture asynchrone (microtask) pour éviter un setState synchrone dans
-    // l'effet, qui déclencherait un rendu en cascade (règle lint du projet).
-    let cancelled = false;
-    Promise.resolve().then(() => {
-      if (cancelled) return;
-      const phone = getDemoPhone();
-      if (!phone) {
-        router.replace('/register?redirect=/dashboard');
-        return;
-      }
-      setChecked(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [router]);
-
-  return checked;
-}
+import { signOut, useSession } from '@/hooks/useSession';
 
 const navItems = [
   { href: '/dashboard', label: "Vue d'ensemble" },
@@ -60,55 +25,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-
-  // Garde : tant que la session démo n'est pas confirmée, rien ne se rend
-  // (ni appels API, ni contenu) — écran de chargement minimal.
-  const authChecked = useDashboardGuard();
+  // L'accès est déjà filtré par le proxy (session serveur) : ici, seul
+  // l'affichage du pseudo dépend de la session.
+  const session = useSession();
+  const username = session.user?.username ?? null;
 
   // Escape ferme le drawer mobile.
   useEffect(() => {
-    if (!authChecked || !menuOpen) return;
+    if (!menuOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setMenuOpen(false);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [menuOpen, authChecked]);
+  }, [menuOpen]);
 
   // Les liens de navigation ferment le drawer (onClick).
-
-  if (!authChecked) {
-    return (
-      <div
-        style={{
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '12px',
-          background: 'var(--paper)',
-          color: 'var(--ink)',
-        }}
-        role="status"
-        aria-live="polite"
-      >
-        <p
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '13px',
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-          }}
-        >
-          Vérification de ta session…
-        </p>
-        <a href="/register" className="btn btn-ghost" style={{ fontSize: '12px' }}>
-          Pas encore de compte ? S&apos;inscrire
-        </a>
-      </div>
-    );
-  }
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
@@ -120,7 +52,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         aria-label="Ouvrir le menu du tableau de bord"
         aria-controls="dashboard-sidebar"
       >
-        ☰ Menu
+        Menu
       </button>
 
       {/* Overlay mobile */}
@@ -179,7 +111,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               display: 'none',
             }}
           >
-            ✕
+            Fermer
           </button>
         </div>
 
@@ -208,11 +140,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               }}
               aria-hidden="true"
             >
-              U
+              {(username ?? '?').charAt(0).toUpperCase()}
             </div>
             <div>
-              <div style={{ fontSize: '13px', fontWeight: 600 }}>Utilisateur</div>
-              <div style={{ fontSize: '11px', color: '#78716c' }}>Membre Izzibusiness</div>
+              <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                {username ? `@${username}` : 'Chargement…'}
+              </div>
+              <div style={{ fontSize: '11px', color: '#a8a29e' }}>
+                {session.user?.isMember ? 'Membre adhérent' : 'Adhésion non réglée'}
+              </div>
             </div>
           </div>
         </div>
@@ -251,11 +187,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div style={{ marginTop: '24px', padding: '0 12px' }}>
           <button
             type="button"
-            onClick={() => {
-              clearDemoPhone();
-              // router.replace : évite un retour arrière vers la session fermée
-              // et recharge les données côté client.
+            onClick={async () => {
+              await signOut();
+              // replace : pas de retour arrière vers une page protégée.
               router.replace('/');
+              router.refresh();
             }}
             style={{
               display: 'flex',

@@ -24,9 +24,9 @@ There is no test runner in this project. If you need one, propose adding it — 
 
 - Next.js 16 (App Router) + React 19 + TypeScript 5 (strict, no `any`)
 - Tailwind CSS 4, custom properties in `src/app/globals.css`
-- Supabase: auth + Postgres + Row Level Security (all migrations in `supabase/migrations/`)
-- Payments: Kkiapay (deposit/withdraw/adhesion), Beem (SMS), PawaPay (mobile money)
-- Email: Resend · SMS codes: Twilio
+- Supabase: auth (pseudo/e-mail + mot de passe, session cookie via `@supabase/ssr`) + Postgres + Row Level Security (all migrations in `supabase/migrations/`)
+- Payments: PayDunya (en cours d'intégration). Dépôts, retraits et adhésion renvoient 503 tant que l'IPN signée n'est pas en place. Code Kkiapay/PawaPay restant à retirer.
+- Email: Resend (auth e-mails envoyés par Supabase). Pas d'OTP SMS.
 - Package manager: **npm** (not pnpm/yarn). Windows/PowerShell environment.
 
 ## Architecture
@@ -36,7 +36,8 @@ src/app/               routes: (marketing) | (auth) | member/* | admin/* | api/*
 src/app/api/           route handlers — one folder per resource, route.ts
 src/components/        shared UI (Navbar, UI primitives)
 src/hooks/             shared React hooks
-src/lib/               config.ts (business rules) · kkiapay.ts (payments) · supabase clients
+src/lib/               config.ts (business rules) · supabase/ (server, client, proxy) · auth/ (schemas zod, pays) · api-response.ts
+src/proxy.ts           garde de routes serveur (/dashboard, /admin, /reset-password)
 supabase/migrations/   numbered SQL migrations, RLS included
 ```
 

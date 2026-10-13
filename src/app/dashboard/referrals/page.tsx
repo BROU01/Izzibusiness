@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { REFERRAL_BONUS, formatFcfa } from '@/lib/config';
-import { getDemoPhone } from '@/lib/demo-client';
 
-interface DemoReferral {
+interface Referral {
   id: string;
-  name: string;
-  phone: string;
+  username: string;
   status: 'active' | 'pending';
   earned: number;
   createdAt: string;
@@ -16,16 +14,14 @@ interface DemoReferral {
 export default function ReferralsPage() {
   const [copied, setCopied] = useState(false);
   const [referralCode, setReferralCode] = useState('IZZ····');
-  const [referrals, setReferrals] = useState<DemoReferral[]>([]);
+  const [referrals, setReferrals] = useState<Referral[]>([]);
 
   useEffect(() => {
-    const phone = getDemoPhone();
-    if (!phone) return;
-    // Le profil démo complet (code + filleuls) est servi par l'API membership.
-    fetch(`/api/membership?phone=${encodeURIComponent(phone)}`)
+    // Code de parrainage et filleuls de l'utilisateur connecté.
+    fetch('/api/membership')
       .then((r) => r.json())
       .then((data) => {
-        if (data.demoMode && data.referralCode) {
+        if (typeof data.referralCode === 'string') {
           setReferralCode(data.referralCode);
         }
         if (Array.isArray(data.referrals)) {
@@ -257,10 +253,10 @@ export default function ReferralsPage() {
                     fontSize: '12px',
                   }}
                 >
-                  {ref.name.charAt(0)}
+                  {ref.username.charAt(0).toUpperCase()}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '13px', fontWeight: 600 }}>{ref.name}</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600 }}>@{ref.username}</div>
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                     {new Date(ref.createdAt).toLocaleDateString('fr-FR', {
                       day: 'numeric',

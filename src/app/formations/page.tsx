@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import CourseImage from '@/components/CourseImage';
-import { useAuth } from '@/hooks/useAuth';
+import { useSession } from '@/hooks/useSession';
 import { useRouter } from 'next/navigation';
 import { formatFcfa, ADHESION_FEE } from '@/lib/config';
 import { createBrowserClient } from '@/lib/supabase/client';
@@ -20,13 +20,14 @@ type Course = {
 };
 
 export default function FormationsPage() {
-  const { user } = useAuth();
+  const { user } = useSession();
   const router = useRouter();
   const [selected, setSelected] = useState<string | null>(null);
   const [paymentStep, setPaymentStep] = useState<
     'idle' | 'phone' | 'processing' | 'success' | 'error'
   >('idle');
   const [phone, setPhone] = useState('');
+  const [, setErrorMsg] = useState('');
 
   const [showAll, setShowAll] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -421,7 +422,7 @@ export default function FormationsPage() {
 
   const openPayment = (id: string | null) => {
     if (!user) {
-      router.push('/register?redirect=/formations');
+      router.push('/login?redirect=/formations');
       return;
     }
     setSelected(id);

@@ -1,67 +1,65 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getDemoUserByPhone } from '@/lib/demo-auth';
-import { payDemoMembership } from '@/lib/demo';
-import { ADHESION_FEE } from '@/lib/config';
+import { NextResponse } from 'next/server';
+import { ADHESION_FEE, REFERRAL_BONUS } from '@/lib/config';
+import { internalError, requireUser } from '@/lib/api-response';
+import { paymentsUnavailable } from '@/lib/payments-status';
+import { createServiceClient } from '@/lib/supabase/server';
 
-export async function GET(request: NextRequest) {
-  // ── Mode démo ────────────────────────────────────────────────────────
-  const phone = new URL(request.url).searchParams.get('phone');
-  const demoUser = await getDemoUserByPhone(phone);
-  if (demoUser) {
+// GET - Statut d'adhésion, code de parrainage et filleuls de l'utilisateur connecté.
+export async function GET() {
+  try {
+    const auth = await requireUser();
+    if (auth.response) return auth.response;
+
+    const { data: profile, error } = await auth.supabase
+      .from('profiles')
+      .select('is_member, referral_code')
+      .eq('id', auth.user.id)
+      .maybeSingle();
+    if (error) return internalError('membership GET', error);
+
+    // Les filleuls ne sont pas lisibles via RLS (profils d'autres comptes) :
+    // lecture serveur restreinte au pseudo, à la date et au statut.
+    let referrals: Array<{
+      id: string;
+      username: string;
+      status: 'active' | 'pending';
+      earned: number;
+      createdAt: string;
+    }> = [];
+    if (profile?.referral_code) {
+      const { data } = await createServiceClient()
+        .from('profiles')
+        .select('id, username, is_member, created_at')
+        .eq('referred_by', profile.referral_code)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      referrals = (data ?? []).map((r) => ({
+        id: r.id,
+        username: r.username ?? 'membre',
+        status: r.is_member ? 'active' : 'pending',
+        earned: r.is_member ? REFERRAL_BONUS : 0,
+        createdAt: r.created_at,
+      }));
+    }
+
     return NextResponse.json({
       adhesionFee: ADHESION_FEE,
-      isMember: demoUser.isMember,
-      paidAt: demoUser.isMember ? new Date().toISOString() : null,
-      referralCode: demoUser.referralCode,
-      referrals: demoUser.referrals,
-      demoMode: true,
+      isMember: profile?.is_member === true,
+      referralCode: profile?.referral_code ?? null,
+      referrals,
     });
+  } catch (error) {
+    return internalError('membership GET', error);
   }
-
-  // Production : le statut réel doit venir de Supabase (auth session).
-  return NextResponse.json({
-    adhesionFee: ADHESION_FEE,
-    isMember: false,
-    paidAt: null,
-  });
 }
 
-export async function POST(request: NextRequest) {
+// POST - Paiement de l'adhésion : suspendu jusqu'à l'intégration PayDunya.
+export async function POST() {
   try {
-    const body = await request.json();
-    const { phone, provider, demoPhone } = body;
-
-    if (!phone || !provider) {
-      return NextResponse.json({ error: 'Telephone et fournisseur requis' }, { status: 400 });
-    }
-
-    // ── Mode démo : adhésion validée immédiatement ─────────────────────
-    const demoUser = await getDemoUserByPhone(demoPhone || phone);
-    if (demoUser) {
-      const result = payDemoMembership(demoUser, provider, phone);
-      if ('error' in result) {
-        return NextResponse.json({ error: result.error }, { status: 400 });
-      }
-      return NextResponse.json({
-        success: true,
-        message: 'Adhesion confirmee',
-        amount: ADHESION_FEE,
-        membership: result.membership,
-        newBalance: result.newBalance,
-        demoMode: true,
-      });
-    }
-
-    // Production :
-    // 1. Créer l'enregistrement d'adhésion dans Supabase
-    // 2. Initier le paiement Kkiapay pour ADHESION_FEE FCFA
-    // 3. Renvoyer la config widget
-    return NextResponse.json({
-      success: true,
-      message: 'Adhesion initiee',
-      amount: ADHESION_FEE,
-    });
-  } catch {
-    return NextResponse.json({ error: 'Erreur interne' }, { status: 500 });
+    const auth = await requireUser();
+    if (auth.response) return auth.response;
+    return paymentsUnavailable();
+  } catch (error) {
+    return internalError('membership POST', error);
   }
 }

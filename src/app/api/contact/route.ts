@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
-import { isSupabaseConfigured } from '@/lib/demo';
+import { createClient } from '@/lib/supabase/server';
+import { internalError } from '@/lib/api-response';
 
 /**
  * Réception des messages du formulaire /contact.
  *
- * Mode démo (Supabase non configuré) : le message est journalisé côté serveur
- * et accusé réception renvoyé — le parcours utilisateur reste complet.
- * Mode production : le message est inséré dans la table `contact_messages`
+ * Le message est inséré dans la table `contact_messages`
  * (migration 003_create_contact_messages.sql) pour traitement par le support.
  *
  * Champs : nom (2-80), email optionnel (5-120), message (10-2000).
@@ -50,48 +48,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── Mode démo : accusé de réception sans persistance ───────────────────
-  if (!isSupabaseConfigured()) {
-    console.log('[CONTACT - demo]', {
-      name: cleanName,
-      email: cleanEmail || null,
-      length: cleanMessage.length,
-      at: new Date().toISOString(),
-    });
-    return NextResponse.json({
-      success: true,
-      message:
-        'Message reçu (mode démonstration). En production, il est enregistré et traité par le support.',
-      demoMode: true,
-    });
-  }
-
-  // ── Mode production : persistance Supabase ─────────────────────────────
   try {
-    const supabase = createServerClient();
+    const supabase = await createClient();
     const { error } = await supabase.from('contact_messages').insert({
       name: cleanName,
       email: cleanEmail || null,
       message: cleanMessage,
     });
 
-    if (error) {
-      console.error('Contact insert error:', error);
-      return NextResponse.json(
-        { success: false, message: "Impossible d'enregistrer ton message. Réessaie." },
-        { status: 500 },
-      );
-    }
+    if (error) return internalError('contact POST', error);
 
     return NextResponse.json({
       success: true,
       message: "Message envoyé ! L'équipe te répond dans les meilleurs délais.",
     });
   } catch (error) {
-    console.error('Contact route error:', error);
-    return NextResponse.json(
-      { success: false, message: 'Erreur interne. Réessaie plus tard.' },
-      { status: 500 },
-    );
+    return internalError('contact POST', error);
   }
 }

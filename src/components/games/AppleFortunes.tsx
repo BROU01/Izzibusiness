@@ -41,11 +41,7 @@ function rollCrash(): boolean {
   return Math.random() < CRASH_CHANCE;
 }
 
-export default function AppleFortunes({
-  balance,
-  onBet,
-  onWin,
-}: AppleFortunesProps) {
+export default function AppleFortunes({ balance, onBet, onWin }: AppleFortunesProps) {
   const [betAmount, setBetAmount] = useState<number>(100);
   const [gameState, setGameState] = useState<'idle' | 'playing' | 'crashed' | 'won'>('idle');
   const [currentRound, setCurrentRound] = useState(0);

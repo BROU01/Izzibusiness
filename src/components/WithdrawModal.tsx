@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { MIN_WITHDRAWAL, WITHDRAWAL_FEE_RATE, formatFcfa } from '@/lib/config';
-import { getDemoPhone } from '@/lib/demo-client';
 
 interface WithdrawModalProps {
   isOpen: boolean;
@@ -104,7 +103,6 @@ export default function WithdrawModal({
           amount: Number(amount),
           phone: phone.replace(/\s/g, '').replace(/^\+/, ''),
           provider,
-          demoPhone: getDemoPhone(),
         }),
       });
 
@@ -116,7 +114,7 @@ export default function WithdrawModal({
         setStep('success');
       } else {
         setStep('confirm');
-        setError(data.message || 'Erreur lors du retrait');
+        setError(data.error?.message || data.message || 'Erreur lors du retrait');
       }
     } catch {
       setStep('confirm');

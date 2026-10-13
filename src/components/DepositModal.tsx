@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { MIN_DEPOSIT, formatFcfa } from '@/lib/config';
-import { getDemoPhone } from '@/lib/demo-client';
 
 /** Interface du widget Kkiapay injecté par cdn.kkiapay.me/k.js. */
 interface KkiapayWindow {
@@ -75,7 +74,6 @@ export default function DepositModal({ isOpen, onClose, onDepositSuccess }: Depo
           amount: Number(amount),
           phone: phone.replace(/\s/g, '').replace(/^\+/, ''),
           provider,
-          demoPhone: getDemoPhone(),
         }),
       });
 
@@ -83,7 +81,7 @@ export default function DepositModal({ isOpen, onClose, onDepositSuccess }: Depo
 
       if (!data.success) {
         setStep('form');
-        setError(data.message || "Erreur lors de l'initiation du dépôt");
+        setError(data.error?.message || data.message || "Erreur lors de l'initiation du dépôt");
         setLoading(false);
         return;
       }

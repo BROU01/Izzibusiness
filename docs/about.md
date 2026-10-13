@@ -9,21 +9,25 @@ Rendre le fitness accessible, ludique et connecté pour tous, grâce à une plat
 ## Fonctionnalités principales
 
 ### 🏋️ Programmes sportifs
+
 - Programmes d'entraînement personnalisés
 - Suivi de progression en temps réel
 - Adaptation selon les objectifs de l'utilisateur
 
 ### 🎮 Gamification
+
 - Leaderboard pour créer une saine compétition
 - Jeux interactifs pour maintenir la motivation
 - Système de points et badges
 
 ### 💰 Portefeuille mobile money
+
 - Dépôts via Kkiapay, Beem, PawaPay
 - Retraits sécurisés
 - Historique des transactions
 
 ### 👨‍💼 Back-office admin
+
 - Gestion complète des utilisateurs
 - Administration des programmes
 - Suivi des transactions
@@ -39,6 +43,7 @@ Rendre le fitness accessible, ludique et connecté pour tous, grâce à une plat
 ## Design system
 
 Le projet utilise un design system unique « Néobrutalisme × Paper-Newsletter » qui combine :
+
 - Une esthétique brutale avec des bordures nettes et des ombres dures
 - Une texture papier chaleureuse avec une grille millimétrique subtile
 - Une typographie expressive (Fraunces + IBM Plex Mono)

@@ -1,81 +1,66 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
-import { getDemoUserByPhone, demoUnauthorized } from '@/lib/demo-auth';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { ERROR_CODES } from '@/lib/error-codes';
+import { apiError, internalError, requireUser } from '@/lib/api-response';
 
-// GET - Récupérer l'historique des transactions
-export async function GET(request: NextRequest) {
-  // ── Mode démo ────────────────────────────────────────────────────────
-  const phone = new URL(request.url).searchParams.get('phone');
-  const demoUser = await getDemoUserByPhone(phone);
-  if (demoUser) {
-    return NextResponse.json({
-      success: true,
-      transactions: demoUser.transactions,
-      total: demoUser.transactions.length,
-      demoMode: true,
-    });
-  }
+const querySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
+  type: z
+    .enum([
+      'deposit',
+      'withdraw',
+      'game_bet',
+      'game_win',
+      'mission_reward',
+      'referral_bonus',
+      'purchase',
+    ])
+    .optional(),
+});
 
+// GET - Historique des transactions de l'utilisateur connecté.
+export async function GET(request: Request) {
   try {
-    const supabase = createServerClient();
+    const auth = await requireUser();
+    if (auth.response) return auth.response;
 
-    // Vérifier l'authentification
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return demoUnauthorized();
+    const params = Object.fromEntries(new URL(request.url).searchParams);
+    const parsed = querySchema.safeParse(params);
+    if (!parsed.success) {
+      return apiError(ERROR_CODES.INVALID_PAYLOAD, 'Paramètres invalides.', 400);
     }
+    const { limit, offset, type } = parsed.data;
 
-    // Récupérer les paramètres de requête
-    const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get('limit') || '20');
-    const offset = parseInt(searchParams.get('offset') || '0');
-    const type = searchParams.get('type'); // Filtrer par type optionnel
-
-    // Construire la requête
-    let query = supabase
+    let query = auth.supabase
       .from('transactions')
-      .select('*', { count: 'exact' })
-      .eq('user_id', user.id)
+      .select('id, type, amount, balance_after, description, reference_id, status, created_at', {
+        count: 'exact',
+      })
+      .eq('user_id', auth.user.id)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
-    if (type) {
-      query = query.eq('type', type);
-    }
+    if (type) query = query.eq('type', type);
 
-    const { data: transactions, error: txError, count } = await query;
-
-    if (txError) {
-      console.error('Error fetching transactions:', txError);
-      return NextResponse.json(
-        { success: false, message: 'Erreur lors de la récupération des transactions' },
-        { status: 500 },
-      );
-    }
+    const { data, error, count } = await query;
+    if (error) return internalError('transactions GET', error);
 
     return NextResponse.json({
       success: true,
-      transactions: (transactions || []).map((tx) => ({
+      transactions: (data ?? []).map((tx) => ({
         id: tx.id,
         type: tx.type,
-        amount: tx.amount,
-        balanceAfter: tx.balance_after,
+        amount: Number(tx.amount),
+        balanceAfter: Number(tx.balance_after),
         description: tx.description,
         referenceId: tx.reference_id,
         status: tx.status,
         createdAt: tx.created_at,
       })),
-      total: count || 0,
+      total: count ?? 0,
     });
   } catch (error) {
-    console.error('Transactions GET error:', error);
-    return NextResponse.json(
-      { success: false, message: 'Erreur interne du serveur' },
-      { status: 500 },
-    );
+    return internalError('transactions GET', error);
   }
 }

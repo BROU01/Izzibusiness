@@ -180,7 +180,6 @@ export default function MobileMoneyPayment({
     setStep('processing');
 
     try {
-
       const response = await fetch('/api/payment/mobile-money', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

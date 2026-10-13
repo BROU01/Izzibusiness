@@ -1,46 +1,50 @@
-import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from '@supabase/ssr';
+import { createClient as createSupabaseClient, type SupabaseClient } from '@supabase/supabase-js';
+import { cookies } from 'next/headers';
+import { getSupabasePublicEnv, SupabaseNotConfiguredError } from './env';
 
-export function createServerClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+/**
+ * Client lié à la session de l'utilisateur (cookies httpOnly gérés par
+ * @supabase/ssr). Respecte la RLS : à utiliser par défaut dans les routes
+ * API et les composants serveur.
+ */
+export async function createClient(): Promise<SupabaseClient> {
+  const env = getSupabasePublicEnv();
+  if (!env) throw new SupabaseNotConfiguredError();
 
-  if (!supabaseUrl || !supabaseKey) {
-    console.warn("Supabase credentials not configured. Using mock client.");
-    // Retourner un client mock qui ne fait rien
-    return createClient("https://placeholder.supabase.co", "placeholder-key", {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
+  const cookieStore = await cookies();
+
+  return createServerClient(env.url, env.anonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
       },
-    });
-  }
-
-  return createClient(supabaseUrl, supabaseKey);
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options),
+          );
+        } catch {
+          // Appel depuis un Server Component : écriture impossible, le
+          // proxy (src/proxy.ts) se charge du rafraîchissement de session.
+        }
+      },
+    },
+  });
 }
 
 /**
- * Creer un client Supabase avec la cle service_role
- * A utiliser UNIQUEMENT cote serveur (API routes, server actions)
- * Jamais cote client
+ * Client service_role : contourne la RLS. Réservé au serveur pour les
+ * opérations que l'utilisateur ne peut pas faire lui-même (résolution
+ * pseudo → e-mail, crédit de wallet après paiement vérifié, notifications).
+ * Ne jamais importer depuis un composant client.
  */
-export function createServiceClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+export function createServiceClient(): SupabaseClient {
+  const env = getSupabasePublicEnv();
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!env || !serviceKey) throw new SupabaseNotConfiguredError();
 
-  if (!supabaseUrl || !serviceKey) {
-    console.warn("Supabase service credentials not configured.");
-    return createClient("https://placeholder.supabase.co", "placeholder-key", {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    });
-  }
-
-  return createClient(supabaseUrl, serviceKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
+  return createSupabaseClient(env.url, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
   });
 }

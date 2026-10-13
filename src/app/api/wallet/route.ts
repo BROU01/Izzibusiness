@@ -1,92 +1,36 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
-import { getDemoUserByPhone, demoUnauthorized } from '@/lib/demo-auth';
+import { internalError, requireUser } from '@/lib/api-response';
+import { NextResponse } from 'next/server';
 
-// GET - Récupérer le wallet de l'utilisateur
-export async function GET(request: NextRequest) {
-  // ── Mode démo ────────────────────────────────────────────────────────
-  const phone = new URL(request.url).searchParams.get('phone');
-  const demoUser = await getDemoUserByPhone(phone);
-  if (demoUser) {
-    return NextResponse.json({
-      success: true,
-      wallet: {
-        balance: demoUser.wallet.balance,
-        gameBalance: demoUser.wallet.gameBalance,
-        currency: demoUser.wallet.currency,
-      },
-      isMember: demoUser.isMember,
-      demoMode: true,
-    });
-  }
-
+// GET - Solde du wallet de l'utilisateur connecté (créé par handle_new_user).
+export async function GET() {
   try {
-    const supabase = createServerClient();
+    const auth = await requireUser();
+    if (auth.response) return auth.response;
 
-    // Vérifier l'authentification
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return demoUnauthorized();
-    }
-
-    // Récupérer le wallet
-    const { data: wallet, error: walletError } = await supabase
+    const { data: wallet, error } = await auth.supabase
       .from('wallets')
-      .select('*')
-      .eq('user_id', user.id)
-      .single();
+      .select('balance, game_balance, currency')
+      .eq('user_id', auth.user.id)
+      .maybeSingle();
 
-    // Si le wallet n'existe pas, le créer
-    if (walletError && walletError.code === 'PGRST116') {
-      const { data: newWallet, error: createError } = await supabase
-        .from('wallets')
-        .insert({ user_id: user.id, balance: 0, game_balance: 0 })
-        .select()
-        .single();
+    if (error) return internalError('wallet GET', error);
 
-      if (createError) {
-        console.error('Error creating wallet:', createError);
-        return NextResponse.json(
-          { success: false, message: 'Erreur lors de la création du wallet' },
-          { status: 500 },
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        wallet: {
-          balance: newWallet.balance,
-          gameBalance: newWallet.game_balance,
-          currency: newWallet.currency,
-        },
-      });
-    }
-
-    if (walletError) {
-      console.error('Error fetching wallet:', walletError);
-      return NextResponse.json(
-        { success: false, message: 'Erreur lors de la récupération du wallet' },
-        { status: 500 },
-      );
-    }
+    const { data: profile } = await auth.supabase
+      .from('profiles')
+      .select('is_member')
+      .eq('id', auth.user.id)
+      .maybeSingle();
 
     return NextResponse.json({
       success: true,
       wallet: {
-        balance: wallet.balance,
-        gameBalance: wallet.game_balance,
-        currency: wallet.currency,
+        balance: Number(wallet?.balance ?? 0),
+        gameBalance: Number(wallet?.game_balance ?? 0),
+        currency: wallet?.currency ?? 'FCFA',
       },
+      isMember: profile?.is_member === true,
     });
   } catch (error) {
-    console.error('Wallet GET error:', error);
-    return NextResponse.json(
-      { success: false, message: 'Erreur interne du serveur' },
-      { status: 500 },
-    );
+    return internalError('wallet GET', error);
   }
 }

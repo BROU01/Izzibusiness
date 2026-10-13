@@ -1,4 +1,4 @@
-import { createServerClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/server';
 
 interface NotificationParams {
   userId: string;
@@ -27,7 +27,7 @@ interface SMSParams {
  * Creer une notification en base et optionnellement envoyer email/SMS
  */
 export async function createNotification(params: NotificationParams): Promise<string | null> {
-  const supabase = createServerClient();
+  const supabase = createServiceClient();
 
   // 1. Creer la notification en base
   const { data, error } = await supabase.rpc('create_notification', {
