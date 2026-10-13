@@ -273,7 +273,6 @@ export default function MobileMoneyPayment({
                   Pays: {provider.countries}
                 </div>
               </div>
-              <span style={{ color: 'var(--text-muted)' }}>→</span>
             </button>
           ))}
         </div>
@@ -290,7 +289,7 @@ export default function MobileMoneyPayment({
           className="btn btn-ghost"
           style={{ marginBottom: '16px', padding: '0', fontSize: '13px' }}
         >
-          ← Retour
+          Retour
         </button>
 
         <h3 style={{ fontSize: '16px', marginBottom: '4px' }}>
@@ -344,7 +343,7 @@ export default function MobileMoneyPayment({
           className="btn btn-ghost"
           style={{ marginBottom: '16px', padding: '0', fontSize: '13px' }}
         >
-          ← Retour
+          Retour
         </button>
 
         <h3 style={{ fontSize: '16px', marginBottom: '4px' }}>
@@ -407,7 +406,7 @@ export default function MobileMoneyPayment({
           className="btn btn-ghost"
           style={{ marginBottom: '16px', padding: '0', fontSize: '13px' }}
         >
-          ← Retour
+          Retour
         </button>
 
         <h3 style={{ fontSize: '16px', marginBottom: '16px' }}>Confirmer le paiement</h3>

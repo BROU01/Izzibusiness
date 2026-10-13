@@ -91,7 +91,7 @@ export default function CalendarPage() {
           <p className="eyebrow">Ton rythme</p>
           {streak > 0 ? (
             <p className="mt-1 font-serif text-lg font-bold">
-              🔥 {streak} jour{streak > 1 ? 's' : ''} d&apos;affilée
+              Série : {streak} jour{streak > 1 ? 's' : ''} d&apos;affilée
             </p>
           ) : (
             <p className="mt-1 font-serif text-lg font-bold text-ink-60">
@@ -170,7 +170,7 @@ export default function CalendarPage() {
                       </span>
                     </span>
                     <span className={`badge shrink-0 ${done ? 'bg-ink text-paper' : ''}`}>
-                      {done ? 'Terminé ✓' : unlocked ? 'Disponible' : 'Verrouillé'}
+                      {done ? 'Terminé' : unlocked ? 'Disponible' : 'Verrouillé'}
                     </span>
                   </button>
 

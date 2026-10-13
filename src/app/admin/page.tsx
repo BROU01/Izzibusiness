@@ -1,166 +1,113 @@
-const stats = [
-  { label: 'Utilisateurs', value: '1 247', change: '+12%' },
-  { label: 'Produits', value: '89', change: '+5%' },
-  { label: 'Commandes', value: '342', change: '+18%' },
-  { label: 'Revenus', value: '2.4M XOF', change: '+23%' },
-];
+import Link from 'next/link';
+import PageHeader from '@/components/ui/PageHeader';
+import EmptyState from '@/components/ui/EmptyState';
+import { createClient } from '@/lib/supabase/server';
+import { formatFcfa } from '@/lib/config';
 
-const recentOrders = [
-  { id: '#001', user: 'Aminata K.', amount: '15 000 XOF', status: 'Paye', date: 'Il y a 2h' },
-  { id: '#002', user: 'Moussa T.', amount: '25 000 XOF', status: 'En attente', date: 'Il y a 5h' },
-  { id: '#003', user: 'Sophie D.', amount: '9 900 XOF', status: 'Paye', date: 'Il y a 1j' },
-  { id: '#004', user: 'Jean P.', amount: '19 900 XOF', status: 'Paye', date: 'Il y a 2j' },
-];
+export const dynamic = 'force-dynamic';
 
-export default function AdminDashboard() {
+const TX_LABELS: Record<string, string> = {
+  deposit: 'Dépôt',
+  withdraw: 'Retrait',
+  game_bet: 'Mise',
+  game_win: 'Gain jeu',
+  mission_reward: 'Mission',
+  referral_bonus: 'Parrainage',
+  purchase: 'Achat',
+};
+
+/**
+ * Vue d'ensemble admin. Les chiffres viennent de la base (policies
+ * is_admin() de la migration 006) ; l'accès à /admin est filtré par le proxy.
+ */
+export default async function AdminDashboard() {
+  const supabase = await createClient();
+
+  const [users, members, wallets, recent] = await Promise.all([
+    supabase.from('profiles').select('id', { count: 'exact', head: true }),
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('is_member', true),
+    supabase.from('wallets').select('balance'),
+    supabase
+      .from('transactions')
+      .select('id, type, amount, status, created_at')
+      .order('created_at', { ascending: false })
+      .limit(10),
+  ]);
+
+  const totalBalance = (wallets.data ?? []).reduce((sum, w) => sum + Number(w.balance ?? 0), 0);
+  const failed = [users, members, wallets, recent].some((r) => r.error);
+
+  const stats = [
+    { label: 'Comptes inscrits', value: String(users.count ?? 0) },
+    { label: 'Adhérents', value: String(members.count ?? 0) },
+    { label: 'Soldes cumulés', value: formatFcfa(totalBalance) },
+  ];
+
   return (
     <div>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', marginBottom: '4px' }}>Dashboard</h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-          Vue d&apos;ensemble de votre plateforme
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Administration"
+        title="Vue d’ensemble"
+        description="Chiffres lus en direct dans la base de données."
+        action={
+          <Link href="/admin/users" className="btn btn-primary">
+            Gérer les comptes
+          </Link>
+        }
+      />
 
-      {/* Stats Grid */}
-      <div className="grid grid-4" style={{ marginBottom: '24px' }}>
-        {stats.map((stat, i) => (
-          <div key={i} className="card">
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                marginBottom: '12px',
-              }}
-            >
-              <span
-                style={{
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  color: 'var(--success)',
-                  background: '#dcfce7',
-                  padding: '2px 8px',
-                  borderRadius: 'var(--radius-full)',
-                }}
-              >
-                {stat.change}
-              </span>
-            </div>
-            <div style={{ fontSize: '24px', fontWeight: 700, marginBottom: '2px' }}>
-              {stat.value}
-            </div>
-            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{stat.label}</div>
+      {failed && (
+        <p role="alert" className="mb-6 border-3 border-ink bg-[#ffe1d6] px-4 py-3 font-semibold">
+          Certaines données n’ont pas pu être chargées. Recharge la page.
+        </p>
+      )}
+
+      <dl className="mb-10 grid gap-4 sm:grid-cols-3">
+        {stats.map((stat) => (
+          <div key={stat.label} className="card-flat">
+            <dt className="eyebrow">{stat.label}</dt>
+            <dd className="mt-2 font-display text-3xl font-black">{stat.value}</dd>
           </div>
         ))}
-      </div>
+      </dl>
 
-      {/* Recent Orders */}
-      <div className="card">
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '16px',
-          }}
-        >
-          <h2 style={{ fontSize: '16px', fontWeight: 600 }}>Commandes recentes</h2>
-          <a href="/admin/orders" style={{ fontSize: '13px', color: 'var(--accent)' }}>
-            Voir tout
-          </a>
-        </div>
-
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              <th
-                style={{
-                  textAlign: 'left',
-                  padding: '10px 0',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text-muted)',
-                }}
-              >
-                ID
-              </th>
-              <th
-                style={{
-                  textAlign: 'left',
-                  padding: '10px 0',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text-muted)',
-                }}
-              >
-                Utilisateur
-              </th>
-              <th
-                style={{
-                  textAlign: 'left',
-                  padding: '10px 0',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text-muted)',
-                }}
-              >
-                Montant
-              </th>
-              <th
-                style={{
-                  textAlign: 'left',
-                  padding: '10px 0',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text-muted)',
-                }}
-              >
-                Statut
-              </th>
-              <th
-                style={{
-                  textAlign: 'left',
-                  padding: '10px 0',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text-muted)',
-                }}
-              >
-                Date
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {recentOrders.map((order, i) => (
-              <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={{ padding: '12px 0', fontSize: '13px', fontWeight: 600 }}>{order.id}</td>
-                <td style={{ padding: '12px 0', fontSize: '13px' }}>{order.user}</td>
-                <td style={{ padding: '12px 0', fontSize: '13px', fontWeight: 600 }}>
-                  {order.amount}
-                </td>
-                <td style={{ padding: '12px 0' }}>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      padding: '4px 10px',
-                      borderRadius: 'var(--radius-full)',
-                      background: order.status === 'Paye' ? '#dcfce7' : '#fef3c7',
-                      color: order.status === 'Paye' ? 'var(--success)' : 'var(--warning)',
-                    }}
-                  >
-                    {order.status}
-                  </span>
-                </td>
-                <td style={{ padding: '12px 0', fontSize: '13px', color: 'var(--text-muted)' }}>
-                  {order.date}
-                </td>
+      <h2 className="mb-4 text-2xl">Dernières transactions</h2>
+      {(recent.data ?? []).length === 0 ? (
+        <EmptyState
+          title="Aucune transaction"
+          description="Les dépôts, retraits et achats apparaîtront ici dès les premiers paiements PayDunya."
+        />
+      ) : (
+        <div className="overflow-x-auto border-3 border-ink">
+          <table className="w-full min-w-[32rem] border-collapse text-left text-sm">
+            <thead className="bg-paper-2 font-mono text-xs uppercase tracking-wider">
+              <tr>
+                <th className="px-4 py-3">Date</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3 text-right">Montant</th>
+                <th className="px-4 py-3">Statut</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {(recent.data ?? []).map((tx) => (
+                <tr key={tx.id} className="border-t-2 border-ink">
+                  <td className="px-4 py-3">
+                    {new Date(tx.created_at).toLocaleString('fr-FR', {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    })}
+                  </td>
+                  <td className="px-4 py-3">{TX_LABELS[tx.type] ?? tx.type}</td>
+                  <td className="px-4 py-3 text-right font-semibold">
+                    {formatFcfa(Number(tx.amount))}
+                  </td>
+                  <td className="px-4 py-3">{tx.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

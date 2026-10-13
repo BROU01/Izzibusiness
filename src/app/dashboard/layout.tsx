@@ -7,30 +7,30 @@ import Logo from '@/components/Logo';
 import { signOut, useSession } from '@/hooks/useSession';
 
 const navItems = [
-  { href: '/dashboard', label: "Vue d'ensemble" },
+  { href: '/dashboard', label: 'Vue d’ensemble' },
+  { href: '/dashboard/wallet', label: 'Wallet' },
+  { href: '/dashboard/orders', label: 'Commandes' },
   { href: '/dashboard/onboarding/calendar', label: 'Programme 20 jours' },
-  { href: '/dashboard/wallet', label: 'Mon Wallet' },
   { href: '/formations', label: 'Formations' },
-  { href: '/dashboard/orders', label: 'Mes Commandes' },
-  { href: '/dashboard/games', label: 'Mes Jeux' },
   { href: '/dashboard/missions', label: 'Missions' },
-  { href: '/dashboard/referrals', label: 'Affiliation' },
-  { href: '/dashboard/streaming', label: 'Streaming' },
+  { href: '/dashboard/games', label: 'Mes parties' },
+  { href: '/dashboard/referrals', label: 'Parrainage' },
   { href: '/dashboard/notifications', label: 'Notifications' },
-  { href: '/dashboard/profile', label: 'Mon Profil' },
+  { href: '/dashboard/profile', label: 'Profil' },
   { href: '/dashboard/settings', label: 'Paramètres' },
 ];
 
+/**
+ * Gabarit de l'espace membre. L'accès est filtré par src/proxy.ts (session
+ * serveur) ; ici la session ne sert qu'à afficher le pseudo.
+ */
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-  // L'accès est déjà filtré par le proxy (session serveur) : ici, seul
-  // l'affichage du pseudo dépend de la session.
   const session = useSession();
   const username = session.user?.username ?? null;
 
-  // Escape ferme le drawer mobile.
   useEffect(() => {
     if (!menuOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -40,143 +40,84 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => document.removeEventListener('keydown', onKey);
   }, [menuOpen]);
 
-  // Les liens de navigation ferment le drawer (onClick).
+  async function handleSignOut() {
+    await signOut();
+    // replace : pas de retour arrière vers une page protégée.
+    router.replace('/');
+    router.refresh();
+  }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      {/* Bouton menu mobile */}
-      <button
-        type="button"
-        className="sidebar-toggle"
-        onClick={() => setMenuOpen(true)}
-        aria-label="Ouvrir le menu du tableau de bord"
-        aria-controls="dashboard-sidebar"
-      >
-        Menu
-      </button>
+    <div className="min-h-dvh md:flex">
+      <div className="flex items-center justify-between border-b-3 border-ink bg-paper px-4 py-3 md:hidden">
+        <Link
+          href="/dashboard"
+          className="flex items-center gap-2 font-display font-black uppercase"
+        >
+          <Logo size={32} />
+          Izzibusiness
+        </Link>
+        <button
+          type="button"
+          className="btn btn-ghost px-3 py-2"
+          onClick={() => setMenuOpen(true)}
+          aria-expanded={menuOpen}
+          aria-controls="dashboard-sidebar"
+        >
+          Menu
+        </button>
+      </div>
 
-      {/* Overlay mobile */}
       {menuOpen && (
-        <div className="sidebar-overlay" onClick={() => setMenuOpen(false)} aria-hidden="true" />
+        <div
+          className="fixed inset-0 z-40 bg-ink/40 md:hidden"
+          onClick={() => setMenuOpen(false)}
+          aria-hidden="true"
+        />
       )}
 
-      {/* Sidebar */}
       <aside
         id="dashboard-sidebar"
-        className={`dashboard-sidebar ${menuOpen ? 'open' : ''}`}
-        style={{
-          width: '240px',
-          background: 'var(--bg-dark)',
-          color: 'var(--text-inverse)',
-          padding: '24px 0',
-          flexShrink: 0,
-          position: 'sticky',
-          top: 0,
-          height: '100vh',
-          overflowY: 'auto',
-        }}
+        className={`fixed inset-y-0 left-0 z-50 w-64 overflow-y-auto border-r-3 border-ink bg-ink text-paper transition-transform md:sticky md:top-0 md:h-dvh md:translate-x-0 ${
+          menuOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
       >
-        <div
-          style={{
-            padding: '0 20px',
-            marginBottom: '32px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
+        <div className="flex items-center justify-between px-5 py-5">
           <Link
             href="/dashboard"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              color: 'white',
-            }}
+            className="flex items-center gap-2 font-display font-black uppercase"
           >
             <Logo size={32} />
-            <span style={{ fontWeight: 800, fontSize: '16px' }}>Izzibusiness</span>
+            Izzibusiness
           </Link>
           <button
             type="button"
-            className="sidebar-close"
+            className="font-mono text-xs font-bold uppercase tracking-wider underline md:hidden"
             onClick={() => setMenuOpen(false)}
-            aria-label="Fermer le menu"
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#a8a29e',
-              fontSize: '18px',
-              cursor: 'pointer',
-              display: 'none',
-            }}
           >
             Fermer
           </button>
         </div>
 
-        {/* User Card */}
-        <div
-          style={{
-            margin: '0 20px 24px',
-            padding: '12px',
-            background: 'rgba(255,255,255,0.05)',
-            borderRadius: 'var(--radius)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div
-              style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '50%',
-                background: 'var(--accent)',
-                color: 'white',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: 700,
-                fontSize: '14px',
-              }}
-              aria-hidden="true"
-            >
-              {(username ?? '?').charAt(0).toUpperCase()}
-            </div>
-            <div>
-              <div style={{ fontSize: '13px', fontWeight: 600 }}>
-                {username ? `@${username}` : 'Chargement…'}
-              </div>
-              <div style={{ fontSize: '11px', color: '#a8a29e' }}>
-                {session.user?.isMember ? 'Membre adhérent' : 'Adhésion non réglée'}
-              </div>
-            </div>
-          </div>
+        <div className="mx-5 mb-5 border-2 border-paper/30 px-3 py-3">
+          <p className="font-semibold">{username ? `@${username}` : 'Chargement…'}</p>
+          <p className="font-mono text-xs uppercase tracking-wider text-paper/70">
+            {session.user?.isMember ? 'Adhérent' : 'Adhésion non réglée'}
+          </p>
         </div>
 
-        <nav
-          aria-label="Navigation du tableau de bord"
-          style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}
-        >
+        <nav aria-label="Navigation de l’espace membre" className="flex flex-col px-3">
           {navItems.map((item) => {
-            const isActive = pathname === item.href;
+            const active = pathname === item.href;
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                aria-current={isActive ? 'page' : undefined}
+                aria-current={active ? 'page' : undefined}
                 onClick={() => setMenuOpen(false)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '10px 20px',
-                  fontSize: '13px',
-                  fontWeight: isActive ? 600 : 500,
-                  color: isActive ? 'white' : '#a8a29e',
-                  background: isActive ? 'rgba(255,255,255,0.1)' : 'transparent',
-                  borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
-                  transition: 'all 0.15s ease',
-                }}
+                className={`px-3 py-2 font-mono text-xs font-bold uppercase tracking-wider ${
+                  active ? 'bg-acid text-ink' : 'text-paper hover:bg-paper/10'
+                }`}
               >
                 {item.label}
               </Link>
@@ -184,89 +125,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           })}
         </nav>
 
-        <div style={{ marginTop: '24px', padding: '0 12px' }}>
-          <button
-            type="button"
-            onClick={async () => {
-              await signOut();
-              // replace : pas de retour arrière vers une page protégée.
-              router.replace('/');
-              router.refresh();
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 12px',
-              fontSize: '13px',
-              color: '#78716c',
-              background: 'none',
-              border: 'none',
-              borderRadius: 'var(--radius-sm)',
-              cursor: 'pointer',
-              width: '100%',
-              textAlign: 'left',
-            }}
-          >
-            Se déconnecter
-          </button>
+        <div className="mt-6 flex flex-col border-t-2 border-paper/30 px-3 py-4">
+          {session.user?.role === 'admin' && (
+            <Link
+              href="/admin"
+              className="px-3 py-2 font-mono text-xs font-bold uppercase tracking-wider text-paper hover:bg-paper/10"
+            >
+              Administration
+            </Link>
+          )}
           <Link
             href="/"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 12px',
-              fontSize: '13px',
-              color: '#78716c',
-              borderRadius: 'var(--radius-sm)',
-              transition: 'all 0.15s ease',
-            }}
+            className="px-3 py-2 font-mono text-xs font-bold uppercase tracking-wider text-paper/70 hover:text-paper"
           >
             Retour au site
           </Link>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="px-3 py-2 text-left font-mono text-xs font-bold uppercase tracking-wider text-paper/70 hover:text-paper"
+          >
+            Se déconnecter
+          </button>
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main
-        className="dashboard-main"
-        style={{ flex: 1, background: 'var(--bg-secondary)', padding: '32px' }}
-      >
-        {children}
-      </main>
-
-      <style>{`
-        /* Empêche les flex items de dépasser le viewport (min-width auto par défaut). */
-        .dashboard-main { min-width: 0; }
-        @media (max-width: 768px) {
-          .dashboard-sidebar {
-            position: fixed !important;
-            left: -260px;
-            top: 0;
-            z-index: 200;
-            transition: left 0.2s ease;
-          }
-          .dashboard-sidebar.open {
-            left: 0;
-          }
-          .sidebar-toggle {
-            display: block !important;
-          }
-          .sidebar-close {
-            display: block !important;
-          }
-          .sidebar-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.4);
-            z-index: 150;
-          }
-          .dashboard-main {
-            padding: 20px 16px !important;
-          }
-        }
-      `}</style>
+      <main className="min-w-0 flex-1 bg-paper px-4 py-8 md:px-10">{children}</main>
     </div>
   );
 }

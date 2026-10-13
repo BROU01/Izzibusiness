@@ -31,42 +31,36 @@ const services = [
   {
     title: 'Formations',
     desc: 'Formations courtes et pratiques pour développer une compétence monétisable, étape par étape.',
-    icon: 'FORM',
     href: '/formations',
     price: `Adhésion ${formatFcfa(ADHESION_FEE)}`,
   },
   {
     title: 'Missions payées',
     desc: 'Petites missions concrètes : likes, partages, commentaires, inscriptions, avis. Rémunération affichée avant de candidater.',
-    icon: 'MISS',
     href: '/dashboard/missions',
     price: 'Rémunération par mission',
   },
   {
     title: 'Marketplace',
     desc: 'Propose ou achète des produits et services numériques directement entre membres.',
-    icon: 'MKTP',
     href: '/market',
     price: '0 % de commission',
   },
   {
     title: 'Affiliation',
     desc: 'Invites tes contacts et reçois un bonus quand leur adhésion est confirmée.',
-    icon: 'AFFI',
     href: '/dashboard/referrals',
     price: `${formatFcfa(REFERRAL_BONUS)} par filleul actif`,
   },
   {
     title: 'Mini-jeux',
-    desc: 'Des parties rapides avec un solde de jeux distinct de ton solde principal. Mises à partir de 50 FCFA, encaissement possible à tout moment. Gains jamais garantis.',
-    icon: 'JEUX',
+    desc: 'Des parties rapides avec un solde de jeux distinct de ton solde principal. En refonte : chaque résultat sera tiré par le serveur. Gains jamais garantis.',
     href: '/games',
-    price: 'Mises dès 50 FCFA',
+    price: 'En maintenance',
   },
   {
     title: 'Formation IA',
     desc: "Un module complet sur l'intelligence artificielle appliquée à tes projets.",
-    icon: 'IA01',
     href: '/formation-ia',
     price: "Incluse dans l'adhésion",
   },
@@ -74,22 +68,18 @@ const services = [
 
 const trustModules = [
   {
-    icon: 'PRIX',
     title: 'Prix affiché avant paiement',
     desc: `Le montant exact — ${formatFcfa(ADHESION_FEE)}, paiement unique — est visible avant toute confirmation. Aucun prélèvement caché.`,
   },
   {
-    icon: 'WALL',
     title: 'Wallet consultable',
     desc: `Solde, dépôts et retraits suivis dans ton espace. Retrait vers mobile money dès ${formatFcfa(MIN_WITHDRAWAL)}.`,
   },
   {
-    icon: 'SUPE',
     title: 'Support humain',
     desc: 'Une équipe répond à tes questions, pas un robot. Accès depuis ton espace.',
   },
   {
-    icon: 'HOLO',
     title: 'Aucun gain garanti',
     desc: 'Les résultats dépendent de ton activité, de tes compétences et des opportunités disponibles. Nous affichons des règles, pas des promesses.',
   },
@@ -108,12 +98,12 @@ export default function HomePage() {
             <span>Édition {new Date().getFullYear()}</span>
           </div>
 
-          <div className="grid items-end gap-10 py-14 md:grid-cols-[1.5fr_1fr] md:py-20">
+          <div className="grid items-end gap-10 py-14 md:grid-cols-[1.5fr_1fr] md:py-20 [&>*]:min-w-0">
             <div>
               <p className="eyebrow">[ 01 ] — Apprendre, agir, progresser</p>
               <h1
                 id="hero-title"
-                className="mt-5 font-serif text-5xl font-black leading-[1.02] tracking-tight md:text-7xl"
+                className="mt-5 font-serif text-[2.4rem] font-black sm:text-5xl leading-[1.02] tracking-tight md:text-7xl"
               >
                 Construis des compétences qui{' '}
                 <span className="bg-acid px-1 box-decoration-clone">
@@ -251,7 +241,7 @@ export default function HomePage() {
             </Link>
             <Link
               href="/dashboard/missions"
-              className="btn border-3 border-paper text-paper hover:bg-paper hover:text-ink"
+              className="btn border-3 border-paper bg-transparent text-paper hover:bg-paper hover:text-ink"
             >
               Consulter les missions disponibles
             </Link>
@@ -278,16 +268,7 @@ export default function HomePage() {
                 href={s.href}
                 className={`card group p-6 transition-transform hover:-translate-y-1 ${i % 3 === 0 ? 'bg-acid' : 'bg-paper'}`}
               >
-                <div className="flex items-start justify-between">
-                  <span className="badge">{s.icon}</span>
-                  <span
-                    aria-hidden
-                    className="font-mono text-xl transition-transform group-hover:translate-x-1"
-                  >
-                    →
-                  </span>
-                </div>
-                <h3 className="mt-5 font-serif text-2xl font-bold">{s.title}</h3>
+                <h3 className="font-serif text-2xl font-bold">{s.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-ink-60">{s.desc}</p>
                 <p className="mt-4 border-t border-ink/20 pt-3 font-mono text-xs font-bold uppercase tracking-wide">
                   {s.price}
@@ -318,7 +299,6 @@ export default function HomePage() {
           <div className="mt-10 grid gap-6 sm:grid-cols-2">
             {trustModules.map((t) => (
               <div key={t.title} className="card flex items-start gap-4 bg-paper p-6">
-                <span className="badge shrink-0">{t.icon}</span>
                 <div>
                   <h3 className="font-serif text-xl font-bold">{t.title}</h3>
                   <p className="mt-1 text-sm leading-relaxed text-ink-60">{t.desc}</p>
@@ -335,11 +315,11 @@ export default function HomePage() {
               parcours — les retours vérifiés, publiés avec l&apos;accord de leurs auteurs,
               apparaîtront ici.
             </p>
-            <ul className="mt-4 grid gap-2 font-mono text-xs uppercase tracking-wide text-ink-60 sm:grid-cols-2">
-              <li>✓ Inscription gratuite, sans carte bancaire</li>
-              <li>✓ Montant affiché avant chaque confirmation</li>
-              <li>✓ Retrait mobile money dès {formatFcfa(MIN_WITHDRAWAL)}</li>
-              <li>✓ Historique de ton wallet consultable</li>
+            <ul className="mt-4 grid list-[square] gap-2 pl-5 font-mono text-xs uppercase tracking-wide text-ink-60 sm:grid-cols-2">
+              <li>Inscription gratuite, sans carte bancaire</li>
+              <li>Montant affiché avant chaque confirmation</li>
+              <li>Retrait mobile money dès {formatFcfa(MIN_WITHDRAWAL)}</li>
+              <li>Historique de ton wallet consultable</li>
             </ul>
           </div>
 
@@ -378,7 +358,7 @@ export default function HomePage() {
             </Link>
             <Link
               href="/contact"
-              className="btn border-3 border-paper text-paper hover:bg-paper hover:text-ink"
+              className="btn border-3 border-paper bg-transparent text-paper hover:bg-paper hover:text-ink"
             >
               Parler à l&apos;équipe support
             </Link>

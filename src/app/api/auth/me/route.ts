@@ -1,20 +1,29 @@
-import { apiData, internalError, requireUser } from '@/lib/api-response';
+import { apiData, internalError } from '@/lib/api-response';
+import { createClient } from '@/lib/supabase/server';
+import { SupabaseNotConfiguredError } from '@/lib/supabase/env';
 
-/** Profil minimal de l'utilisateur connecté (navigation, tableau de bord). */
+/**
+ * Profil minimal de l'utilisateur connecté (navigation, tableau de bord).
+ * Un visiteur anonyme reçoit `{ data: null }` (200) : ce n'est pas une
+ * erreur, c'est l'état normal des pages publiques.
+ */
 export async function GET() {
   try {
-    const auth = await requireUser();
-    if (auth.response) return auth.response;
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return apiData(null);
 
-    const { data: profile } = await auth.supabase
+    const { data: profile } = await supabase
       .from('profiles')
       .select('username, name, role, is_member, referral_code, country')
-      .eq('id', auth.user.id)
+      .eq('id', user.id)
       .maybeSingle();
 
     return apiData({
-      id: auth.user.id,
-      email: auth.user.email ?? null,
+      id: user.id,
+      email: user.email ?? null,
       username: profile?.username ?? null,
       name: profile?.name ?? null,
       role: profile?.role === 'admin' ? 'admin' : 'user',
@@ -23,6 +32,7 @@ export async function GET() {
       country: profile?.country ?? null,
     });
   } catch (error) {
+    if (error instanceof SupabaseNotConfiguredError) return apiData(null);
     return internalError('auth/me', error);
   }
 }

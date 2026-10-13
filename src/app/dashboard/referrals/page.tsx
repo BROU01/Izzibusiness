@@ -62,13 +62,13 @@ export default function ReferralsPage() {
           <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Personnes parrainées</div>
         </div>
         <div className="card" style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '32px', fontWeight: 700, color: '#22c55e' }}>
+          <div style={{ fontSize: '32px', fontWeight: 700, color: '#00744a' }}>
             {formatFcfa(totalEarned)}
           </div>
           <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Total gagné</div>
         </div>
         <div className="card" style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '32px', fontWeight: 700, color: '#f59e0b' }}>
+          <div style={{ fontSize: '32px', fontWeight: 700, color: '#b8320d' }}>
             {formatFcfa(REFERRAL_BONUS)}
           </div>
           <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Par parrainage actif</div>
@@ -98,7 +98,7 @@ export default function ReferralsPage() {
             className="btn btn-primary"
             style={{ padding: '8px 16px' }}
           >
-            {copied ? 'Copié ✓' : 'Copier'}
+            {copied ? 'Lien copié' : 'Copier'}
           </button>
         </div>
 
@@ -111,7 +111,6 @@ export default function ReferralsPage() {
               style={{
                 padding: '8px 12px',
                 background: 'var(--bg-secondary)',
-                borderRadius: 'var(--radius)',
                 fontFamily: 'monospace',
                 fontSize: '14px',
                 fontWeight: 700,
@@ -130,10 +129,9 @@ export default function ReferralsPage() {
             style={{
               flex: 1,
               padding: '10px',
-              background: '#25D366',
+              background: '#00744a',
               color: 'white',
               border: 'none',
-              borderRadius: 'var(--radius)',
               fontSize: '13px',
               fontWeight: 600,
               cursor: 'pointer',
@@ -146,10 +144,9 @@ export default function ReferralsPage() {
             style={{
               flex: 1,
               padding: '10px',
-              background: '#1877F2',
+              background: 'var(--sky)',
               color: 'white',
               border: 'none',
-              borderRadius: 'var(--radius)',
               fontSize: '13px',
               fontWeight: 600,
               cursor: 'pointer',
@@ -188,7 +185,6 @@ export default function ReferralsPage() {
                 style={{
                   width: '28px',
                   height: '28px',
-                  borderRadius: '50%',
                   background: 'var(--accent)',
                   color: 'white',
                   display: 'flex',
@@ -236,14 +232,12 @@ export default function ReferralsPage() {
                   gap: '12px',
                   padding: '12px',
                   background: 'var(--bg-secondary)',
-                  borderRadius: 'var(--radius)',
                 }}
               >
                 <div
                   style={{
                     width: '36px',
                     height: '36px',
-                    borderRadius: '50%',
                     background: 'var(--accent-light)',
                     color: 'var(--accent)',
                     display: 'flex',
@@ -270,8 +264,7 @@ export default function ReferralsPage() {
                     style={{
                       fontSize: '12px',
                       padding: '4px 10px',
-                      borderRadius: '10px',
-                      background: ref.status === 'active' ? '#dcfce7' : '#fef3c7',
+                      background: ref.status === 'active' ? '#d6f5e8' : 'var(--acid)',
                       color: ref.status === 'active' ? 'var(--success)' : 'var(--warning)',
                       fontWeight: 600,
                     }}
@@ -282,7 +275,7 @@ export default function ReferralsPage() {
                     <div
                       style={{
                         fontSize: '12px',
-                        color: '#22c55e',
+                        color: '#00744a',
                         fontWeight: 600,
                         marginTop: '4px',
                       }}

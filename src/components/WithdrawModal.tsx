@@ -169,12 +169,14 @@ export default function WithdrawModal({
             style={{
               background: 'none',
               border: 'none',
-              fontSize: '20px',
+              fontSize: '13px',
+              fontWeight: 700,
+              textDecoration: 'underline',
               cursor: 'pointer',
-              color: 'var(--text-muted)',
+              color: 'var(--ink)',
             }}
           >
-            ✕
+            Fermer
           </button>
         </div>
 
@@ -487,7 +489,7 @@ export default function WithdrawModal({
               }}
               aria-hidden="true"
             >
-              ✓
+              OK
             </div>
             <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '8px' }}>
               Retrait initié

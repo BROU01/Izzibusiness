@@ -10,13 +10,13 @@ interface NotificationCenterProps {
 }
 
 const typeColors: Record<string, { bg: string; text: string }> = {
-  info: { bg: '#dbeafe', text: '#2563eb' },
-  success: { bg: '#dcfce7', text: '#16a34a' },
-  warning: { bg: '#fef3c7', text: '#d97706' },
-  error: { bg: '#fee2e2', text: '#dc2626' },
-  transaction: { bg: '#ede9fe', text: '#7c3aed' },
-  game: { bg: '#fce7f3', text: '#db2777' },
-  referral: { bg: '#d1fae5', text: '#059669' },
+  info: { bg: 'var(--paper-2)', text: 'var(--sky)' },
+  success: { bg: '#d6f5e8', text: '#00744a' },
+  warning: { bg: 'var(--acid)', text: '#b8320d' },
+  error: { bg: '#ffe1d6', text: '#b8320d' },
+  transaction: { bg: 'var(--paper-2)', text: 'var(--sky)' },
+  game: { bg: 'var(--paper-2)', text: '#b8320d' },
+  referral: { bg: '#d6f5e8', text: '#00744a' },
 };
 
 const typeLabels: Record<string, string> = {
@@ -59,7 +59,6 @@ export default function NotificationCenter({ compact = false }: NotificationCent
           background: 'none',
           border: 'none',
           cursor: 'pointer',
-          borderRadius: 'var(--radius)',
           transition: 'background 0.15s',
         }}
         onMouseEnter={(e) => {
@@ -88,8 +87,7 @@ export default function NotificationCenter({ compact = false }: NotificationCent
               right: '2px',
               width: '18px',
               height: '18px',
-              borderRadius: '50%',
-              background: '#ef4444',
+              background: '#b8320d',
               color: 'white',
               fontSize: '10px',
               fontWeight: 700,
@@ -122,7 +120,6 @@ export default function NotificationCenter({ compact = false }: NotificationCent
               maxHeight: '480px',
               background: 'var(--bg-card)',
               border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)',
               boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
               zIndex: 100,
               overflow: 'hidden',
@@ -144,9 +141,8 @@ export default function NotificationCenter({ compact = false }: NotificationCent
                   <span
                     style={{
                       padding: '2px 8px',
-                      background: '#fee2e2',
-                      color: '#dc2626',
-                      borderRadius: '10px',
+                      background: '#ffe1d6',
+                      color: '#b8320d',
                       fontSize: '11px',
                       fontWeight: 600,
                     }}
@@ -226,7 +222,6 @@ export default function NotificationCenter({ compact = false }: NotificationCent
                         style={{
                           width: '8px',
                           height: '8px',
-                          borderRadius: '50%',
                           background: notification.read ? 'var(--border)' : colors.text,
                           marginTop: '6px',
                           flexShrink: 0,
@@ -271,7 +266,6 @@ export default function NotificationCenter({ compact = false }: NotificationCent
                           <span
                             style={{
                               padding: '1px 6px',
-                              borderRadius: '4px',
                               background: colors.bg,
                               color: colors.text,
                               fontSize: '10px',

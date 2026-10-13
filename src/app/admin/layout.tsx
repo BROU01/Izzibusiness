@@ -2,92 +2,58 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import Logo from '@/components/Logo';
 
 const navItems = [
-  { href: '/admin', label: 'Dashboard' },
+  { href: '/admin', label: 'Vue d’ensemble' },
+  { href: '/admin/users', label: 'Comptes' },
   { href: '/admin/products', label: 'Produits' },
-  { href: '/admin/users', label: 'Utilisateurs' },
   { href: '/admin/orders', label: 'Commandes' },
-  { href: '/admin/settings', label: 'Parametres' },
+  { href: '/admin/settings', label: 'Paramètres' },
 ];
 
+/** Gabarit admin. L'accès (session + rôle admin) est vérifié par src/proxy.ts. */
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <aside
-        style={{
-          width: '240px',
-          background: 'var(--bg-dark)',
-          color: 'var(--text-inverse)',
-          padding: '24px 0',
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ padding: '0 20px', marginBottom: '32px' }}>
-          <Link
-            href="/admin"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              color: 'white',
-            }}
-          >
-            <Logo size={32} />
-            <span style={{ fontWeight: 800, fontSize: '16px' }}>Izzibusiness</span>
+    <div className="min-h-dvh md:flex">
+      <aside className="border-b-3 border-ink bg-ink text-paper md:sticky md:top-0 md:h-dvh md:w-60 md:shrink-0 md:border-b-0 md:border-r-3">
+        <div className="px-5 py-5">
+          <Link href="/admin" className="font-display text-lg font-black uppercase">
+            Izzibusiness
           </Link>
-          <div style={{ fontSize: '11px', color: '#78716c', marginTop: '4px' }}>Administration</div>
+          <p className="mt-1 font-mono text-xs uppercase tracking-[0.14em] text-paper/70">
+            Administration
+          </p>
         </div>
-
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        <nav
+          aria-label="Navigation admin"
+          className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-col md:overflow-visible"
+        >
           {navItems.map((item) => {
-            const isActive = pathname === item.href;
+            const active = pathname === item.href;
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '10px 20px',
-                  fontSize: '13px',
-                  fontWeight: isActive ? 600 : 500,
-                  color: isActive ? 'white' : '#a8a29e',
-                  background: isActive ? 'rgba(255,255,255,0.1)' : 'transparent',
-                  borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
-                  transition: 'all 0.15s ease',
-                }}
+                aria-current={active ? 'page' : undefined}
+                className={`whitespace-nowrap px-3 py-2 font-mono text-xs font-bold uppercase tracking-wider ${
+                  active ? 'bg-acid text-ink' : 'text-paper hover:bg-paper/10'
+                }`}
               >
                 {item.label}
               </Link>
             );
           })}
-        </nav>
-
-        <div style={{ position: 'absolute', bottom: '24px', left: '20px', right: '20px' }}>
           <Link
-            href="/"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 12px',
-              fontSize: '13px',
-              color: '#78716c',
-              borderRadius: 'var(--radius-sm)',
-            }}
+            href="/dashboard"
+            className="whitespace-nowrap px-3 py-2 font-mono text-xs font-bold uppercase tracking-wider text-paper/70 hover:text-paper md:mt-6"
           >
-            Retour au site
+            Retour à mon espace
           </Link>
-        </div>
+        </nav>
       </aside>
-
-      <main style={{ flex: 1, background: 'var(--bg-secondary)', padding: '32px' }}>
-        {children}
-      </main>
+      <main className="min-w-0 flex-1 px-4 py-8 md:px-10">{children}</main>
     </div>
   );
 }

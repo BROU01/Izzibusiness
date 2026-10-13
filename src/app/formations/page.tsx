@@ -710,10 +710,10 @@ export default function FormationsPage() {
                 </p>
                 <div className="rule my-4" />
                 <ul className="space-y-2 text-[13px]">
-                  <li>✓ 18 formations professionnelles</li>
-                  <li>✓ Accès aux missions payées</li>
-                  <li>✓ Communauté privée</li>
-                  <li>✓ Certificats de réussite</li>
+                  <li>18 formations professionnelles</li>
+                  <li>Accès aux missions payées</li>
+                  <li>Communauté privée</li>
+                  <li>Certificats de réussite</li>
                 </ul>
               </div>
             </div>
@@ -895,12 +895,8 @@ export default function FormationsPage() {
                     Abonnement IZIBUSINESS
                   </p>
                 </div>
-                <button
-                  onClick={closePayment}
-                  className="btn btn-secondary px-3 py-1.5"
-                  aria-label="Fermer"
-                >
-                  ✕
+                <button onClick={closePayment} className="btn btn-secondary px-3 py-1.5">
+                  Fermer
                 </button>
               </div>
 

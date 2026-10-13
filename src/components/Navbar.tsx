@@ -11,7 +11,6 @@ const NAV_ITEMS = [
   { href: '/games', label: 'Jeux' },
   { href: '/market', label: 'Marketplace' },
   { href: '/dashboard/referrals', label: 'Affiliation' },
-  { href: '/leaderboard', label: 'Classement' },
 ];
 
 export default function Navbar() {

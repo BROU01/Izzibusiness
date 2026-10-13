@@ -56,8 +56,7 @@ export default function WalletPage() {
       {/* Balance Card */}
       <div
         style={{
-          background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
-          borderRadius: 'var(--radius)',
+          background: 'var(--ink)',
           padding: '32px',
           color: 'white',
           marginBottom: '24px',
@@ -66,7 +65,7 @@ export default function WalletPage() {
         <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
           {/* Main Balance */}
           <div style={{ flex: 1, minWidth: '200px' }}>
-            <div style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '8px' }}>
+            <div style={{ fontSize: '13px', color: 'var(--ink-muted)', marginBottom: '8px' }}>
               Solde principal
             </div>
             <div style={{ fontSize: '40px', fontWeight: 800, marginBottom: '24px' }}>
@@ -78,10 +77,9 @@ export default function WalletPage() {
                 onClick={() => setShowDeposit(true)}
                 style={{
                   padding: '10px 20px',
-                  background: '#22c55e',
+                  background: '#00744a',
                   color: 'white',
                   border: 'none',
-                  borderRadius: 'var(--radius)',
                   fontSize: '13px',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -96,7 +94,6 @@ export default function WalletPage() {
                   background: 'rgba(255,255,255,0.1)',
                   color: 'white',
                   border: '1px solid rgba(255,255,255,0.2)',
-                  borderRadius: 'var(--radius)',
                   fontSize: '13px',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -112,14 +109,13 @@ export default function WalletPage() {
             style={{
               padding: '16px',
               background: 'rgba(255,255,255,0.05)',
-              borderRadius: 'var(--radius)',
               minWidth: '180px',
             }}
           >
-            <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '4px' }}>
+            <div style={{ fontSize: '11px', color: 'var(--ink-muted)', marginBottom: '4px' }}>
               Solde jeux
             </div>
-            <div style={{ fontSize: '24px', fontWeight: 700, color: '#f59e0b' }}>
+            <div style={{ fontSize: '24px', fontWeight: 700, color: '#b8320d' }}>
               {loading ? '...' : `${gameBalance.toLocaleString()} ${currency}`}
             </div>
             <a
@@ -128,9 +124,8 @@ export default function WalletPage() {
                 display: 'inline-block',
                 marginTop: '8px',
                 padding: '6px 12px',
-                background: '#6366f1',
+                background: 'var(--sky)',
                 color: 'white',
-                borderRadius: 'var(--radius)',
                 fontSize: '11px',
                 fontWeight: 600,
                 textDecoration: 'none',
@@ -182,7 +177,6 @@ export default function WalletPage() {
               padding: '6px 12px',
               background: 'var(--bg-secondary)',
               border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)',
               fontSize: '12px',
               cursor: 'pointer',
             }}
@@ -210,7 +204,6 @@ export default function WalletPage() {
                   gap: '12px',
                   padding: '12px',
                   background: 'var(--bg-secondary)',
-                  borderRadius: 'var(--radius)',
                 }}
               >
                 <div style={{ flex: 1 }}>
@@ -232,7 +225,7 @@ export default function WalletPage() {
                     style={{
                       fontSize: '13px',
                       fontWeight: 600,
-                      color: tx.amount > 0 ? '#22c55e' : '#ef4444',
+                      color: tx.amount > 0 ? '#00744a' : '#b8320d',
                     }}
                   >
                     {tx.amount > 0 ? '+' : ''}

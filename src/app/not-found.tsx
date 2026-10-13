@@ -6,15 +6,14 @@ export default function NotFound() {
       <p className="text-sm uppercase tracking-widest text-[var(--ink-muted)]">Erreur 404</p>
       <h1 className="font-display text-4xl font-bold">Page introuvable</h1>
       <p className="text-[var(--ink-muted)]">
-        Cette page n&apos;existe pas ou a été déplacée. Retrouvez le classement général ou vos
-        missions depuis le tableau de bord.
+        Cette page n&apos;existe pas ou a été déplacée. Le marché et ton espace restent accessibles.
       </p>
       <div className="flex flex-wrap justify-center gap-3">
         <Link href="/" className="btn">
           Retour à l&apos;accueil
         </Link>
-        <Link href="/leaderboard" className="btn-secondary">
-          Voir le leaderboard
+        <Link href="/market" className="btn-secondary">
+          Parcourir le marché
         </Link>
       </div>
     </main>

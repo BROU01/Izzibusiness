@@ -85,98 +85,6 @@ export function useWallet() {
     }
   }, []);
 
-  // Placer une mise de jeu
-  const placeBet = useCallback(async (amount: number, game: string): Promise<boolean> => {
-    try {
-      const response = await fetch('/api/wallet/game', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'bet', amount, game }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setWallet((prev) => ({
-          ...prev,
-          balance: data.balance,
-          gameBalance: data.gameBalance,
-        }));
-        return true;
-      }
-
-      return false;
-    } catch (error) {
-      console.error('Error placing bet:', error);
-      return false;
-    }
-  }, []);
-
-  // Encaisser un gain
-  const collectWin = useCallback(
-    async (amount: number, game: string, multiplier?: number): Promise<boolean> => {
-      try {
-        const response = await fetch('/api/wallet/game', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'win', amount, game, multiplier }),
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-          setWallet((prev) => ({
-            ...prev,
-            balance: data.balance,
-            gameBalance: data.gameBalance,
-          }));
-          return true;
-        }
-
-        return false;
-      } catch (error) {
-        console.error('Error collecting win:', error);
-        return false;
-      }
-    },
-    [],
-  );
-
-  // Encaisser les gains (cashout)
-  const cashOut = useCallback(
-    async (amount: number, game: string, multiplier?: number): Promise<boolean> => {
-      try {
-        const response = await fetch('/api/wallet/game', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'cashout',
-            amount,
-            game,
-            multiplier,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-          setWallet((prev) => ({
-            ...prev,
-            balance: data.balance,
-            gameBalance: data.gameBalance,
-          }));
-          return true;
-        }
-
-        return false;
-      } catch (error) {
-        console.error('Error cashing out:', error);
-        return false;
-      }
-    },
-    [],
-  );
-
   // Charger le wallet au montage — IIFE async : les setState ne surviennent
   // qu'après la réponse réseau, jamais de façon synchrone dans l'effet.
   useEffect(() => {
@@ -218,8 +126,5 @@ export function useWallet() {
     transactionsLoading,
     fetchWallet,
     fetchTransactions,
-    placeBet,
-    collectWin,
-    cashOut,
   };
 }

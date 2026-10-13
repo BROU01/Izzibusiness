@@ -53,7 +53,7 @@ function CopyButton({ text }: { text: string }) {
 
   const label =
     state === 'copied'
-      ? 'Copié ✓'
+      ? 'Copié'
       : state === 'failed'
         ? 'Copie impossible — sélectionne le texte'
         : 'Copier le prompt';
@@ -359,7 +359,7 @@ export default function DayDetailPage() {
                     rel="noopener noreferrer"
                     className="text-sm font-bold underline decoration-2 underline-offset-2"
                   >
-                    {r.name} ↗
+                    {r.name}
                   </a>
                   <p className="mt-1 text-xs text-ink-60">{r.desc}</p>
                 </li>
@@ -409,7 +409,7 @@ export default function DayDetailPage() {
                 href={`/dashboard/onboarding/calendar/${dayData.day - 1}`}
                 className="btn btn-secondary"
               >
-                ← Jour {dayData.day - 1}
+                Jour précédent ({dayData.day - 1})
               </Link>
             ) : (
               <span />
@@ -424,7 +424,7 @@ export default function DayDetailPage() {
                     : "Verrouillé — termine d'abord les jours précédents"
                 }
               >
-                Jour {dayData.day + 1} →
+                Jour suivant ({dayData.day + 1})
               </Link>
             ) : (
               <Link href="/dashboard/onboarding/calendar" className="btn btn-primary">
