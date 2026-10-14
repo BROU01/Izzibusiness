@@ -8,7 +8,7 @@ import { ADHESION_FEE, REFERRAL_BONUS, formatFcfa } from '@/lib/config';
 
 export default function DashboardPage() {
   const session = useSession();
-  const { balance, gameBalance, loading, error } = useWallet();
+  const { balance, loading, error } = useWallet();
   const username = session.user?.username;
   const isMember = session.user?.isMember === true;
 
@@ -33,14 +33,10 @@ export default function DashboardPage() {
         </p>
       )}
 
-      <dl className="mb-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <dl className="mb-10 grid gap-4 sm:grid-cols-2">
         <div className="card-flat">
           <dt className="eyebrow">Solde principal</dt>
           <dd className="mt-2 font-display text-3xl font-black">{amount(balance)}</dd>
-        </div>
-        <div className="card-flat">
-          <dt className="eyebrow">Solde jeux</dt>
-          <dd className="mt-2 font-display text-3xl font-black">{amount(gameBalance)}</dd>
         </div>
         <div className="card-flat">
           <dt className="eyebrow">Adhésion</dt>
@@ -56,9 +52,11 @@ export default function DashboardPage() {
             <p className="eyebrow">À faire</p>
             <h2 className="mt-2 text-2xl">Régler ton adhésion</h2>
             <p className="mt-2 text-ink-70">
-              {formatFcfa(ADHESION_FEE)}, une seule fois. Le paiement Mobile Money par PayDunya
-              ouvre très bientôt ; tu seras prévenu dans tes notifications.
+              {formatFcfa(ADHESION_FEE)}, une seule fois : jeux, missions et retraits débloqués.
             </p>
+            <Link href="/dashboard/wallet" className="btn btn-primary mt-4">
+              Activer mon adhésion
+            </Link>
           </section>
         )}
 

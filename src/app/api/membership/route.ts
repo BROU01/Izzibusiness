@@ -1,7 +1,17 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { ADHESION_FEE, REFERRAL_BONUS } from '@/lib/config';
-import { internalError, requireUser } from '@/lib/api-response';
-import { paymentsUnavailable } from '@/lib/payments-status';
+import { ERROR_CODES } from '@/lib/error-codes';
+import {
+  apiData,
+  apiError,
+  asRpcResult,
+  internalError,
+  readJson,
+  requireProfile,
+  requireUser,
+} from '@/lib/api-response';
+import { startCheckout } from '@/lib/payments/checkout';
 import { createServiceClient } from '@/lib/supabase/server';
 
 // GET - Statut d'adhésion, code de parrainage et filleuls de l'utilisateur connecté.
@@ -53,12 +63,50 @@ export async function GET() {
   }
 }
 
-// POST - Paiement de l'adhésion : suspendu jusqu'à l'intégration PayDunya.
-export async function POST() {
+const paySchema = z.object({ method: z.enum(['paydunya', 'wallet']) });
+
+// POST - Régler l'adhésion par Mobile Money (PayDunya) ou avec le solde du wallet.
+export async function POST(request: Request) {
   try {
-    const auth = await requireUser();
+    const auth = await requireProfile();
     if (auth.response) return auth.response;
-    return paymentsUnavailable();
+    if (auth.profile.isMember) {
+      return apiError(ERROR_CODES.CONFLICT, 'Ton adhésion est déjà active.', 409);
+    }
+
+    const parsed = paySchema.safeParse(await readJson(request));
+    if (!parsed.success) {
+      return apiError(ERROR_CODES.INVALID_PAYLOAD, 'Choisis un moyen de paiement.', 400);
+    }
+
+    if (parsed.data.method === 'wallet') {
+      const { data, error } = await createServiceClient().rpc('pay_membership_from_wallet', {
+        p_user_id: auth.user.id,
+        p_fee: ADHESION_FEE,
+        p_referral_bonus: REFERRAL_BONUS,
+      });
+      if (error) return internalError('membership wallet', error);
+      const result = asRpcResult(data);
+      if (!result.success) {
+        return apiError(
+          result.error === 'Solde insuffisant'
+            ? ERROR_CODES.INSUFFICIENT_FUNDS
+            : ERROR_CODES.CONFLICT,
+          result.error ?? 'Paiement impossible.',
+          result.error === 'Solde insuffisant' ? 402 : 409,
+        );
+      }
+      return apiData({ status: 'active' });
+    }
+
+    const { checkoutUrl } = await startCheckout({
+      requestUrl: request.url,
+      userId: auth.user.id,
+      kind: 'membership',
+      amount: ADHESION_FEE,
+      description: 'Adhésion Izzibusiness',
+    });
+    return apiData({ checkoutUrl });
   } catch (error) {
     return internalError('membership POST', error);
   }

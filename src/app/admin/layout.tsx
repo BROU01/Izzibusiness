@@ -6,8 +6,14 @@ import { usePathname } from 'next/navigation';
 const navItems = [
   { href: '/admin', label: 'Vue d’ensemble' },
   { href: '/admin/users', label: 'Comptes' },
-  { href: '/admin/products', label: 'Produits' },
-  { href: '/admin/orders', label: 'Commandes' },
+  { href: '/admin/payments', label: 'Paiements' },
+  { href: '/admin/withdrawals', label: 'Retraits' },
+  { href: '/admin/games', label: 'Jeux' },
+  { href: '/admin/missions', label: 'Missions' },
+  { href: '/admin/formations', label: 'Formations' },
+  { href: '/admin/messages', label: 'Messages' },
+  { href: '/admin/notifications', label: 'Annonces' },
+  { href: '/admin/products', label: 'Marché' },
   { href: '/admin/settings', label: 'Paramètres' },
 ];
 
@@ -31,7 +37,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-col md:overflow-visible"
         >
           {navItems.map((item) => {
-            const active = pathname === item.href;
+            const active =
+              item.href === '/admin' ? pathname === '/admin' : pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}

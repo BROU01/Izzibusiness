@@ -9,6 +9,9 @@ export interface SessionUser {
   role: 'user' | 'admin';
   isMember: boolean;
   referralCode: string | null;
+  country: string | null;
+  phone: string | null;
+  isBanned: boolean;
 }
 
 export type SessionState =

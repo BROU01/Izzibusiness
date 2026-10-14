@@ -1,4 +1,4 @@
-# Izzibusiness — Plateforme Fitness & Gamification
+# Izzibusiness — Formations, missions, jeux et wallet Mobile Money
 
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js)
 ![React](https://img.shields.io/badge/React-19-black?style=flat-square&logo=react)
@@ -6,33 +6,42 @@
 ![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38bdf8?style=flat-square&logo=tailwind-css)
 ![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ecf8e?style=flat-square&logo=supabase)
 
-Application Next.js 16 (App Router) : programmes sportifs, suivi de progression,
-gamification (leaderboard, jeux), portefeuille avec dépôts/retraits mobile money
-(Kkiapay, Beem, PawaPay), back-office admin.
+Application Next.js 16 (App Router) pour l'Afrique de l'Ouest (FCFA) : formations,
+missions rémunérées, jeux à mises réelles tirés côté serveur, parrainage, wallet
+Mobile Money (PayDunya) et panneau d'administration complet.
 
 > Pour un agent IA travaillant sur ce dépôt, commence par [`CLAUDE.md`](./CLAUDE.md).
 
 ## Fonctionnalités
 
-- **Programmes sportifs** : création et suivi de programmes d'entraînement personnalisés
-- **Gamification** : leaderboard, jeux, système de points et badges
-- **Portefeuille** : dépôts et retraits via mobile money (Kkiapay, Beem, PawaPay)
-- **Back-office admin** : gestion des utilisateurs, programmes, transactions
-- **Authentification** : inscription, connexion, récupération de mot de passe
-- **Design system** : néobrutalisme × paper-newsletter, responsive et accessible
+- **Accès** : l'accueil est public ; formations, missions, jeux, marché et parrainage
+  demandent un compte (garde serveur `src/proxy.ts`).
+- **Comptes** : inscription pseudo / e-mail / pays / téléphone / parrain / mot de passe,
+  connexion par pseudo ou e-mail, mot de passe oublié (Supabase Auth, sans OTP).
+- **Wallet** : dépôts et adhésion par PayDunya (facture + IPN vérifiée), retraits vers le
+  numéro du compte, validés puis payés par l'admin (déboursement PayDunya).
+- **Jeux** : Aviator, Spin & Win, Apple Fortunes. Résultat tiré par le serveur, graine
+  révélée après la partie, retour joueur réglé dans `src/lib/config.ts`.
+- **Missions** : créées par l'admin, preuve envoyée par le membre, récompense créditée à
+  la validation.
+- **Admin** (`/admin`) : vue d'ensemble, comptes, paiements, retraits, jeux, missions,
+  formations, messages, annonces, paramètres.
+- **Marché multi-vendeurs** : en préparation.
 
 ## Stack
 
-| Domaine            | Outil                             |
-| ------------------ | --------------------------------- |
-| Framework          | Next.js 16 (App Router), React 19 |
-| Langage            | TypeScript (strict)               |
-| Styles             | Tailwind CSS 4                    |
-| Base de données    | Supabase (PostgreSQL + RLS)       |
-| Paiements          | Kkiapay, Beem, PawaPay            |
-| Email / SMS        | Resend, Twilio                    |
-| Lint / Format      | ESLint 9, Prettier                |
-| Gestion de paquets | **npm**                           |
+| Domaine            | Outil                                  |
+| ------------------ | -------------------------------------- |
+| Framework          | Next.js 16 (App Router), React 19      |
+| Langage            | TypeScript (strict), zod               |
+| Styles             | Tailwind CSS 4                         |
+| Base de données    | Supabase (PostgreSQL + RLS)            |
+| Paiements          | PayDunya (encaissement + déboursement) |
+| E-mails            | Supabase Auth, Resend (optionnel)      |
+| Lint / Format      | ESLint 9, Prettier                     |
+| Gestion de paquets | **npm**                                |
+
+Guide de configuration PayDunya : [`docs/paydunya.md`](./docs/paydunya.md).
 
 ## Démarrage
 
@@ -65,7 +74,7 @@ Aucun script de test n'existe actuellement.
 src/app/           pages et routes API (App Router)
 src/components/    composants React
 src/hooks/         hooks React
-src/lib/           logique métier (config, clients Supabase, providers paiement)
+src/lib/           logique métier (config, Supabase, PayDunya, jeux, paiements)
 public/            assets statiques
 supabase/migrations/  migrations SQL (RLS activée)
 scripts/           scripts utilitaires (génération de visuels)

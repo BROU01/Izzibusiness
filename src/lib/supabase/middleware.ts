@@ -2,8 +2,20 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import { getSupabasePublicEnv } from './env';
 
-/** Pages réservées aux comptes connectés. */
-const PROTECTED_PREFIXES = ['/dashboard', '/admin', '/reset-password'];
+/**
+ * Pages réservées aux comptes connectés. Restent publiques : l'accueil,
+ * /about, /contact, /terms, /privacy et les pages d'accès.
+ */
+const PROTECTED_PREFIXES = [
+  '/dashboard',
+  '/admin',
+  '/reset-password',
+  '/games',
+  '/formations',
+  '/formation-ia',
+  '/market',
+  '/leaderboard',
+];
 /** Pages réservées aux administrateurs (rôle vérifié en base). */
 const ADMIN_PREFIXES = ['/admin'];
 /** Pages d'accès : inutiles une fois connecté. */

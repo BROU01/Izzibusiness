@@ -1,10 +1,14 @@
 import PageHeader from '@/components/ui/PageHeader';
+import { isPaydunyaConfigured, isPaydunyaLive } from '@/lib/paydunya';
 import {
   ADHESION_FEE,
   MIN_DEPOSIT,
   MIN_WITHDRAWAL,
   REFERRAL_BONUS,
   WITHDRAWAL_FEE_RATE,
+  MIN_BET,
+  MAX_BET,
+  GAME_RTP,
   formatFcfa,
 } from '@/lib/config';
 
@@ -25,6 +29,8 @@ export default function AdminSettingsPage() {
       value: `${(WITHDRAWAL_FEE_RATE * 100).toLocaleString('fr-FR')} %`,
     },
     { label: 'Bonus parrainage', value: formatFcfa(REFERRAL_BONUS) },
+    { label: 'Mises', value: `${formatFcfa(MIN_BET)} à ${formatFcfa(MAX_BET)}` },
+    { label: 'Retour joueur théorique', value: `${Math.round(GAME_RTP * 100)} %` },
   ];
 
   const services = [
@@ -34,7 +40,16 @@ export default function AdminSettingsPage() {
     },
     { label: 'URL publique (NEXT_PUBLIC_APP_URL)', ok: Boolean(process.env.NEXT_PUBLIC_APP_URL) },
     { label: 'E-mails Resend', ok: Boolean(process.env.RESEND_API_KEY) },
-    { label: 'Paiements PayDunya', ok: false, note: 'Intégration en cours' },
+    {
+      label: 'Paiements PayDunya',
+      ok: isPaydunyaConfigured(),
+      note: isPaydunyaConfigured() ? undefined : 'Clés manquantes',
+      detail: isPaydunyaConfigured()
+        ? isPaydunyaLive()
+          ? 'Mode production'
+          : 'Mode test (sandbox)'
+        : undefined,
+    },
   ];
 
   return (
@@ -70,7 +85,12 @@ export default function AdminSettingsPage() {
               key={s.label}
               className="flex items-center justify-between gap-4 border-b-2 border-ink px-4 py-3 last:border-b-0"
             >
-              <span>{s.label}</span>
+              <span>
+                {s.label}
+                {'detail' in s && s.detail && (
+                  <span className="block text-xs text-ink-70">{s.detail}</span>
+                )}
+              </span>
               <span className={`badge ${s.ok ? 'badge-grass' : ''}`}>
                 {s.ok ? 'Configuré' : (s.note ?? 'Non configuré')}
               </span>

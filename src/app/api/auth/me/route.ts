@@ -17,7 +17,7 @@ export async function GET() {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('username, name, role, is_member, referral_code, country')
+      .select('username, name, role, is_member, is_banned, referral_code, country, phone')
       .eq('id', user.id)
       .maybeSingle();
 
@@ -30,6 +30,8 @@ export async function GET() {
       isMember: profile?.is_member === true,
       referralCode: profile?.referral_code ?? null,
       country: profile?.country ?? null,
+      phone: profile?.phone ?? null,
+      isBanned: profile?.is_banned === true,
     });
   } catch (error) {
     if (error instanceof SupabaseNotConfiguredError) return apiData(null);

@@ -5,12 +5,21 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { useSession } from '@/hooks/useSession';
 
-const NAV_ITEMS = [
-  { href: '/formations', label: 'Formation' },
+/** Visiteur : on reste sur l'accueil (sections ancrées). */
+const PUBLIC_ITEMS = [
+  { href: '/#services', label: 'Services' },
+  { href: '/#comment-ca-marche', label: 'Comment ça marche' },
+  { href: '/#faq', label: 'FAQ' },
+  { href: '/contact', label: 'Contact' },
+];
+
+/** Membre connecté : accès direct aux fonctionnalités. */
+const MEMBER_ITEMS = [
+  { href: '/formations', label: 'Formations' },
   { href: '/dashboard/missions', label: 'Missions' },
   { href: '/games', label: 'Jeux' },
-  { href: '/market', label: 'Marketplace' },
-  { href: '/dashboard/referrals', label: 'Affiliation' },
+  { href: '/market', label: 'Marché' },
+  { href: '/dashboard/referrals', label: 'Parrainage' },
 ];
 
 export default function Navbar() {
@@ -18,6 +27,7 @@ export default function Navbar() {
   const pathname = usePathname();
   const session = useSession();
   const signedIn = session.status === 'authenticated';
+  const NAV_ITEMS = signedIn ? MEMBER_ITEMS : PUBLIC_ITEMS;
   const isActive = (href: string) =>
     pathname === href || (href !== '/' && pathname.startsWith(href + '/'));
 

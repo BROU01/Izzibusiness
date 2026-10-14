@@ -1,245 +1,221 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useWallet } from '@/hooks/useWallet';
-import WithdrawModal from '@/components/WithdrawModal';
-import DepositModal from '@/components/DepositModal';
+import { Suspense, useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import PageHeader from '@/components/ui/PageHeader';
+import { FormAlert } from '@/components/auth/FormField';
+import { useSession } from '@/hooks/useSession';
+import { formatFcfa } from '@/lib/config';
+import MembershipCard from './MembershipCard';
+import DepositForm from './DepositForm';
+import WithdrawForm from './WithdrawForm';
 
-export default function WalletPage() {
-  const {
-    balance,
-    gameBalance,
-    currency,
-    loading,
-    transactions,
-    transactionsLoading,
-    fetchTransactions,
-    fetchWallet,
-  } = useWallet();
-  const [showDeposit, setShowDeposit] = useState(false);
-  const [showWithdraw, setShowWithdraw] = useState(false);
+interface Tx {
+  id: string;
+  type: string;
+  amount: number;
+  description: string | null;
+  status: string;
+  createdAt: string;
+}
+
+interface Withdrawal {
+  id: string;
+  amount: number;
+  fee: number;
+  status: 'requested' | 'processing' | 'paid' | 'rejected' | 'failed';
+  note: string | null;
+  createdAt: string;
+}
+
+const WITHDRAWAL_LABELS: Record<Withdrawal['status'], string> = {
+  requested: 'En attente de validation',
+  processing: 'Envoi en cours',
+  paid: 'Envoyé',
+  rejected: 'Refusé, montant restitué',
+  failed: 'Échec, montant restitué',
+};
+
+type Load<T> = { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: T };
+
+function WalletContent() {
+  const session = useSession();
+  const searchParams = useSearchParams();
+  const cancelled = searchParams.get('paiement') === 'annule';
+
+  const [balance, setBalance] = useState<Load<number>>({ status: 'loading' });
+  const [isMember, setIsMember] = useState(false);
+  const [txs, setTxs] = useState<Load<Tx[]>>({ status: 'loading' });
+  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
+  const [version, setVersion] = useState(0);
+  const refresh = useCallback(() => setVersion((v) => v + 1), []);
 
   useEffect(() => {
-    fetchTransactions(20);
-  }, [fetchTransactions]);
+    let stop = false;
+    void (async () => {
+      try {
+        const [w, t, wd] = await Promise.all([
+          fetch('/api/wallet', { cache: 'no-store' }),
+          fetch('/api/wallet/transactions?limit=30', { cache: 'no-store' }),
+          fetch('/api/wallet/withdraw', { cache: 'no-store' }),
+        ]);
+        if (stop) return;
+        if (!w.ok || !t.ok) throw new Error('load');
+        const wallet = (await w.json()) as { wallet: { balance: number }; isMember: boolean };
+        const history = (await t.json()) as { transactions: Tx[] };
+        const pending = wd.ok ? ((await wd.json()) as { withdrawals: Withdrawal[] }) : null;
+        if (stop) return;
+        setBalance({ status: 'ready', data: wallet.wallet.balance });
+        setIsMember(wallet.isMember);
+        setTxs({ status: 'ready', data: history.transactions });
+        setWithdrawals(pending?.withdrawals ?? []);
+      } catch {
+        if (!stop) {
+          setBalance({ status: 'error' });
+          setTxs({ status: 'error' });
+        }
+      }
+    })();
+    return () => {
+      stop = true;
+    };
+  }, [version]);
 
-  const getTypeLabel = (type: string) => {
-    switch (type) {
-      case 'deposit':
-        return 'Depot';
-      case 'withdraw':
-        return 'Retrait';
-      case 'game_bet':
-        return 'Mise de jeu';
-      case 'game_win':
-        return 'Gain de jeu';
-      case 'mission_reward':
-        return 'Recompense mission';
-      case 'referral_bonus':
-        return 'Bonus parrainage';
-      case 'purchase':
-        return 'Achat';
-      default:
-        return type;
-    }
-  };
+  const amount = balance.status === 'ready' ? balance.data : 0;
 
   return (
     <div>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', marginBottom: '4px' }}>Mon Wallet</h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-          Gerez vos fonds et transactions
+      <PageHeader
+        eyebrow="Mon espace"
+        title="Wallet"
+        description="Dépôts et retraits Mobile Money, adhésion et historique."
+      />
+
+      {cancelled && (
+        <div className="mb-6">
+          <FormAlert tone="error">Paiement annulé : aucun montant n’a été débité.</FormAlert>
+        </div>
+      )}
+
+      <div className="mb-8 border-3 border-ink bg-ink px-6 py-6 text-paper shadow-hard">
+        <p className="font-mono text-xs uppercase tracking-[0.14em] text-paper/75">
+          Solde disponible
         </p>
-      </div>
-
-      {/* Balance Card */}
-      <div
-        style={{
-          background: 'var(--ink)',
-          padding: '32px',
-          color: 'white',
-          marginBottom: '24px',
-        }}
-      >
-        <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-          {/* Main Balance */}
-          <div style={{ flex: 1, minWidth: '200px' }}>
-            <div style={{ fontSize: '13px', color: 'var(--ink-muted)', marginBottom: '8px' }}>
-              Solde principal
-            </div>
-            <div style={{ fontSize: '40px', fontWeight: 800, marginBottom: '24px' }}>
-              {loading ? '...' : `${balance.toLocaleString()} ${currency}`}
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                onClick={() => setShowDeposit(true)}
-                style={{
-                  padding: '10px 20px',
-                  background: '#00744a',
-                  color: 'white',
-                  border: 'none',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Deposer
-              </button>
-              <button
-                onClick={() => setShowWithdraw(true)}
-                style={{
-                  padding: '10px 20px',
-                  background: 'rgba(255,255,255,0.1)',
-                  color: 'white',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Retirer
-              </button>
-            </div>
-          </div>
-
-          {/* Game Balance */}
-          <div
-            style={{
-              padding: '16px',
-              background: 'rgba(255,255,255,0.05)',
-              minWidth: '180px',
-            }}
-          >
-            <div style={{ fontSize: '11px', color: 'var(--ink-muted)', marginBottom: '4px' }}>
-              Solde jeux
-            </div>
-            <div style={{ fontSize: '24px', fontWeight: 700, color: '#b8320d' }}>
-              {loading ? '...' : `${gameBalance.toLocaleString()} ${currency}`}
-            </div>
-            <a
-              href="/games"
-              style={{
-                display: 'inline-block',
-                marginTop: '8px',
-                padding: '6px 12px',
-                background: 'var(--sky)',
-                color: 'white',
-                fontSize: '11px',
-                fontWeight: 600,
-                textDecoration: 'none',
-              }}
-            >
-              Jouer
-            </a>
-          </div>
-        </div>
-      </div>
-
-      {/* Deposit Modal */}
-      <DepositModal
-        isOpen={showDeposit}
-        onClose={() => setShowDeposit(false)}
-        onDepositSuccess={() => {
-          fetchWallet();
-          fetchTransactions(20);
-          setShowDeposit(false);
-        }}
-      />
-
-      {/* Withdraw Modal */}
-      <WithdrawModal
-        isOpen={showWithdraw}
-        onClose={() => setShowWithdraw(false)}
-        balance={balance}
-        onWithdrawSuccess={() => {
-          fetchWallet();
-          fetchTransactions(20);
-          setShowWithdraw(false);
-        }}
-      />
-
-      {/* Transactions */}
-      <div className="card">
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '16px',
-          }}
-        >
-          <h2 style={{ fontSize: '16px', fontWeight: 600 }}>Historique des transactions</h2>
-          <button
-            onClick={() => fetchTransactions(50)}
-            style={{
-              padding: '6px 12px',
-              background: 'var(--bg-secondary)',
-              border: '1px solid var(--border)',
-              fontSize: '12px',
-              cursor: 'pointer',
-            }}
-          >
-            Actualiser
+        <p className="mt-2 font-display text-4xl font-black" aria-live="polite">
+          {balance.status === 'loading'
+            ? 'Chargement…'
+            : balance.status === 'error'
+              ? 'Indisponible'
+              : formatFcfa(balance.data)}
+        </p>
+        {balance.status === 'error' && (
+          <button type="button" className="mt-3 underline" onClick={refresh}>
+            Réessayer
           </button>
-        </div>
-
-        {transactionsLoading ? (
-          <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
-            Chargement...
-          </div>
-        ) : transactions.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
-            Aucune transaction pour l&apos;instant
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {transactions.map((tx) => (
-              <div
-                key={tx.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '12px',
-                  background: 'var(--bg-secondary)',
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: '13px', fontWeight: 600 }}>
-                    {tx.description || getTypeLabel(tx.type)}
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    {new Date(tx.createdAt).toLocaleDateString('fr-FR', {
-                      day: 'numeric',
-                      month: 'short',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div
-                    style={{
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      color: tx.amount > 0 ? '#00744a' : '#b8320d',
-                    }}
-                  >
-                    {tx.amount > 0 ? '+' : ''}
-                    {tx.amount.toLocaleString()} {currency}
-                  </div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    Solde: {tx.balanceAfter.toLocaleString()}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
         )}
       </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {balance.status === 'ready' && !isMember && (
+          <div className="lg:col-span-2">
+            <MembershipCard balance={amount} onPaid={refresh} />
+          </div>
+        )}
+        <DepositForm />
+        {isMember ? (
+          <WithdrawForm
+            balance={amount}
+            country={session.user?.country ?? null}
+            phone={session.user?.phone ?? null}
+            onRequested={refresh}
+          />
+        ) : (
+          <section className="card">
+            <h2 className="text-2xl">Retirer</h2>
+            <p className="mt-2 text-ink-70">Les retraits sont ouverts aux adhérents.</p>
+          </section>
+        )}
+      </div>
+
+      {withdrawals.length > 0 && (
+        <section className="mt-10">
+          <h2 className="mb-4 text-2xl">Mes retraits</h2>
+          <ul className="border-3 border-ink">
+            {withdrawals.map((w) => (
+              <li
+                key={w.id}
+                className="flex flex-wrap items-center justify-between gap-2 border-b-2 border-ink px-4 py-3 last:border-b-0"
+              >
+                <span>
+                  {formatFcfa(w.amount)}{' '}
+                  <span className="text-sm text-ink-70">
+                    le {new Date(w.createdAt).toLocaleDateString('fr-FR')}
+                  </span>
+                </span>
+                <span className={`badge ${w.status === 'paid' ? 'badge-grass' : ''}`}>
+                  {WITHDRAWAL_LABELS[w.status]}
+                </span>
+                {w.note && <p className="w-full text-sm text-ink-70">Motif : {w.note}</p>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="mt-10">
+        <h2 className="mb-4 text-2xl">Historique</h2>
+        {txs.status === 'loading' && (
+          <p role="status" className="font-mono text-sm uppercase tracking-wider">
+            Chargement…
+          </p>
+        )}
+        {txs.status === 'error' && <FormAlert tone="error">Historique indisponible.</FormAlert>}
+        {txs.status === 'ready' && txs.data.length === 0 && (
+          <p className="border-3 border-dashed border-ink px-4 py-6 text-center text-ink-70">
+            Aucune opération pour l’instant. Ton premier dépôt apparaîtra ici.
+          </p>
+        )}
+        {txs.status === 'ready' && txs.data.length > 0 && (
+          <div className="overflow-x-auto border-3 border-ink">
+            <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
+              <thead className="bg-paper-2 font-mono text-xs uppercase tracking-wider">
+                <tr>
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Opération</th>
+                  <th className="px-4 py-3 text-right">Montant</th>
+                </tr>
+              </thead>
+              <tbody>
+                {txs.data.map((tx) => (
+                  <tr key={tx.id} className="border-t-2 border-ink">
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {new Date(tx.createdAt).toLocaleString('fr-FR', {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      })}
+                    </td>
+                    <td className="px-4 py-3">{tx.description ?? tx.type}</td>
+                    <td
+                      className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${tx.amount > 0 ? 'text-[#00744a]' : ''}`}
+                    >
+                      {tx.amount > 0 ? '+' : ''}
+                      {formatFcfa(tx.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
+  );
+}
+
+export default function WalletPage() {
+  return (
+    <Suspense>
+      <WalletContent />
+    </Suspense>
   );
 }

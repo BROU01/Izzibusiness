@@ -1,375 +1,317 @@
 import Link from 'next/link';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
-import { formatFcfa, ADHESION_FEE, MIN_WITHDRAWAL, REFERRAL_BONUS } from '@/lib/config';
+import {
+  ADHESION_FEE,
+  GAME_RTP,
+  MIN_BET,
+  MIN_DEPOSIT,
+  MIN_WITHDRAWAL,
+  REFERRAL_BONUS,
+  WITHDRAWAL_FEE_RATE,
+  formatFcfa,
+} from '@/lib/config';
+import { createClient } from '@/lib/supabase/server';
 
-// -- Page d'accueil --
-// Framework Trust & Conversion (voir CODEBUFF_BRIEF) : 1 promesse → 1 preuve → 1 action.
-// Aucune donnée fictive : les chiffres affichés viennent de src/lib/config.ts
-// (source de vérité unique) ou décrivent des caractéristiques vérifiables du produit.
-// Interdits ici : compteurs d'utilisateurs, témoignages inventés, promesses de gains.
+// Page publique : tout visiteur peut lire. Les fonctionnalités (marché,
+// formations, missions, jeux, parrainage) sont réservées aux comptes
+// connectés et protégées par src/proxy.ts.
+// Aucune donnée inventée : les montants viennent de src/lib/config.ts.
 
-const steps = [
-  {
-    num: '01',
-    title: 'Choisis ton point de départ',
-    desc: 'Formation, missions ou vente : commence par ce qui correspond à ton objectif du moment.',
-  },
-  {
-    num: '02',
-    title: 'Avance avec un plan clair',
-    desc: 'Chaque étape indique quoi faire, combien de temps y consacrer et comment valider ta progression.',
-  },
-  {
-    num: '03',
-    title: 'Applique et suis tes résultats',
-    desc: 'Missions, offres et progression sont visibles dans ton tableau de bord, en temps réel.',
-  },
-];
+const feePercent = `${(WITHDRAWAL_FEE_RATE * 100).toLocaleString('fr-FR')} %`;
 
-const services = [
+const SERVICES = [
   {
     title: 'Formations',
-    desc: 'Formations courtes et pratiques pour développer une compétence monétisable, étape par étape.',
+    desc: 'Des parcours courts et pratiques, dont un programme guidé de 20 jours et un module sur l’intelligence artificielle appliquée.',
     href: '/formations',
-    price: `Adhésion ${formatFcfa(ADHESION_FEE)}`,
+    note: 'Inclus avec l’adhésion',
   },
   {
-    title: 'Missions payées',
-    desc: 'Petites missions concrètes : likes, partages, commentaires, inscriptions, avis. Rémunération affichée avant de candidater.',
+    title: 'Missions rémunérées',
+    desc: 'Des tâches publiées par l’équipe, avec la rémunération annoncée à l’avance. Tu envoies ta preuve, l’équipe vérifie, ton wallet est crédité.',
     href: '/dashboard/missions',
-    price: 'Rémunération par mission',
+    note: 'Pour les adhérents',
   },
   {
-    title: 'Marketplace',
-    desc: 'Propose ou achète des produits et services numériques directement entre membres.',
-    href: '/market',
-    price: '0 % de commission',
-  },
-  {
-    title: 'Affiliation',
-    desc: 'Invites tes contacts et reçois un bonus quand leur adhésion est confirmée.',
-    href: '/dashboard/referrals',
-    price: `${formatFcfa(REFERRAL_BONUS)} par filleul actif`,
-  },
-  {
-    title: 'Mini-jeux',
-    desc: 'Des parties rapides avec un solde de jeux distinct de ton solde principal. En refonte : chaque résultat sera tiré par le serveur. Gains jamais garantis.',
+    title: 'Jeux',
+    desc: `Aviator, Spin & Win et Apple Fortunes, avec ton solde. Résultats tirés par le serveur, environ ${Math.round(GAME_RTP * 100)} % des mises redistribués sur la durée. Réservé aux majeurs.`,
     href: '/games',
-    price: 'En maintenance',
+    note: `Mises dès ${formatFcfa(MIN_BET)}`,
   },
   {
-    title: 'Formation IA',
-    desc: "Un module complet sur l'intelligence artificielle appliquée à tes projets.",
-    href: '/formation-ia',
-    price: "Incluse dans l'adhésion",
+    title: 'Marché',
+    desc: 'Les boutiques des membres : chacun pourra publier ses produits et être payé par Mobile Money.',
+    href: '/market',
+    note: 'Ouverture prochaine',
+  },
+  {
+    title: 'Parrainage',
+    desc: 'Partage ton lien d’invitation. Quand une personne invitée règle son adhésion, tu reçois un bonus sur ton wallet.',
+    href: '/dashboard/referrals',
+    note: `${formatFcfa(REFERRAL_BONUS)} par filleul adhérent`,
+  },
+  {
+    title: 'Wallet Mobile Money',
+    desc: 'Dépôts et retraits via MTN, Moov, Orange, Wave et d’autres opérateurs selon ton pays, par l’intermédiaire de PayDunya.',
+    href: '/dashboard/wallet',
+    note: `Retrait dès ${formatFcfa(MIN_WITHDRAWAL)}`,
   },
 ];
 
-const trustModules = [
+const STEPS = [
   {
-    title: 'Prix affiché avant paiement',
-    desc: `Le montant exact — ${formatFcfa(ADHESION_FEE)}, paiement unique — est visible avant toute confirmation. Aucun prélèvement caché.`,
+    title: 'Crée ton compte',
+    desc: 'Pseudo, e-mail, pays, téléphone et mot de passe. C’est gratuit et sans engagement.',
   },
   {
-    title: 'Wallet consultable',
-    desc: `Solde, dépôts et retraits suivis dans ton espace. Retrait vers mobile money dès ${formatFcfa(MIN_WITHDRAWAL)}.`,
+    title: 'Active ton adhésion',
+    desc: `${formatFcfa(ADHESION_FEE)}, une seule fois, par Mobile Money ou avec ton solde. Elle débloque les missions, les jeux et les retraits.`,
   },
   {
-    title: 'Support humain',
-    desc: 'Une équipe répond à tes questions, pas un robot. Accès depuis ton espace.',
+    title: 'Utilise la plateforme',
+    desc: 'Suis les formations, réalise des missions, joue avec ton solde, invite tes proches.',
   },
   {
-    title: 'Aucun gain garanti',
-    desc: 'Les résultats dépendent de ton activité, de tes compétences et des opportunités disponibles. Nous affichons des règles, pas des promesses.',
+    title: 'Retire tes gains',
+    desc: `Vers ton numéro Mobile Money, à partir de ${formatFcfa(MIN_WITHDRAWAL)}, frais de ${feePercent}. Chaque retrait est vérifié par l’équipe avant l’envoi.`,
   },
 ];
 
-export default function HomePage() {
+const FAQ = [
+  {
+    q: 'L’inscription est-elle payante ?',
+    a: `Non. Créer un compte est gratuit. Seule l’adhésion (${formatFcfa(ADHESION_FEE)}, une seule fois) est payante ; elle est nécessaire pour les missions, les jeux et les retraits.`,
+  },
+  {
+    q: 'Comment déposer de l’argent sur mon wallet ?',
+    a: `Depuis ton wallet, choisis un montant (minimum ${formatFcfa(MIN_DEPOSIT)}). Tu es redirigé vers la page de paiement sécurisée PayDunya, puis ton solde est crédité dès que l’opérateur confirme le paiement.`,
+  },
+  {
+    q: 'Comment retirer, et combien de temps cela prend-il ?',
+    a: `Le retrait part vers le numéro Mobile Money de ton compte, à partir de ${formatFcfa(MIN_WITHDRAWAL)}, avec ${feePercent} de frais. Le montant est bloqué dès la demande, puis envoyé après vérification par l’équipe. En cas de refus, tout est restitué sur ton wallet.`,
+  },
+  {
+    q: 'Les jeux sont-ils équitables ?',
+    a: `Chaque résultat est tiré par le serveur avant d’être affiché, à partir d’une graine secrète dont l’empreinte est enregistrée au début de la partie et révélée à la fin. Sur la durée, environ ${Math.round(GAME_RTP * 100)} % des mises sont redistribuées : la plateforme garde le reste. Aucun gain n’est garanti, et les jeux sont réservés aux personnes majeures.`,
+  },
+  {
+    q: 'Comment fonctionnent les missions ?',
+    a: 'Chaque mission indique ce qu’il faut faire, la preuve à fournir et la rémunération exacte. Une fois ta preuve validée par l’équipe, la récompense arrive sur ton wallet.',
+  },
+  {
+    q: 'Comment fonctionne le parrainage ?',
+    a: `Ton lien d’invitation est dans ton espace. Tu reçois ${formatFcfa(REFERRAL_BONUS)} quand une personne inscrite avec ton lien règle son adhésion.`,
+  },
+  {
+    q: 'Dans quels pays puis-je utiliser Izzibusiness ?',
+    a: 'L’inscription est ouverte au Bénin, au Togo, en Côte d’Ivoire, au Sénégal, au Burkina Faso, au Mali, au Niger, au Cameroun, au Gabon et dans les deux Congo. Les dépôts et retraits dépendent des opérateurs Mobile Money pris en charge par PayDunya dans ton pays.',
+  },
+  {
+    q: 'Que faites-vous de mes données ?',
+    a: 'Ton téléphone et ton e-mail servent à ton compte et à tes paiements ; ils ne sont jamais affichés aux autres membres. Les détails sont dans la politique de confidentialité.',
+  },
+];
+
+async function isSignedIn(): Promise<boolean> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    return Boolean(user);
+  } catch {
+    return false;
+  }
+}
+
+export default async function HomePage() {
+  const signedIn = await isSignedIn();
+  const primary = signedIn
+    ? { href: '/dashboard', label: 'Ouvrir mon espace' }
+    : { href: '/register', label: 'Créer mon compte gratuit' };
+
   return (
-    <main className="min-h-screen bg-paper text-ink">
+    <>
       <Navbar />
-
-      {/* ===== Hero : masthead de journal ===== */}
-      <section className="border-b-3 border-ink" aria-labelledby="hero-title">
-        <div className="mx-auto max-w-6xl px-5">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink/30 py-3 font-mono text-[11px] uppercase tracking-widest text-ink-60">
-            <span>Apprendre · Agir · Progresser</span>
-            <span>Édition {new Date().getFullYear()}</span>
-          </div>
-
-          <div className="grid items-end gap-10 py-14 md:grid-cols-[1.5fr_1fr] md:py-20 [&>*]:min-w-0">
+      <main className="bg-paper text-ink">
+        {/* Hero */}
+        <section className="border-b-3 border-ink" aria-labelledby="hero-title">
+          <div className="container grid items-end gap-10 py-14 md:grid-cols-[1.5fr_1fr] md:py-20 [&>*]:min-w-0">
             <div>
-              <p className="eyebrow">[ 01 ] — Apprendre, agir, progresser</p>
+              <p className="eyebrow">Apprendre · Agir · Encaisser</p>
               <h1
                 id="hero-title"
-                className="mt-5 font-serif text-[2.4rem] font-black sm:text-5xl leading-[1.02] tracking-tight md:text-7xl"
+                className="mt-4 text-[2.4rem] leading-[1.02] sm:text-5xl md:text-7xl"
               >
-                Construis des compétences qui{' '}
-                <span className="bg-acid px-1 box-decoration-clone">
-                  peuvent devenir des revenus
-                </span>
-                .
+                Formations, missions, jeux et{' '}
+                <span className="bg-acid px-1 box-decoration-clone">wallet Mobile Money</span>, au
+                même endroit.
               </h1>
-              <p className="mt-6 max-w-xl text-lg text-ink-60">
-                Un parcours guidé, des missions et des outils pour passer de l&apos;apprentissage à
-                l&apos;action, à ton rythme.
+              <p className="mt-6 max-w-xl text-lg text-ink-70">
+                Lis tout ce qu’il faut savoir ici. Les services s’ouvrent dès que tu as un compte.
               </p>
-              <div className="mt-8 flex flex-wrap items-center gap-4">
-                <Link href="/formations" className="btn btn-primary">
-                  Découvrir le parcours
+              <div className="mt-8 flex flex-wrap gap-4">
+                <Link href={primary.href} className="btn btn-primary">
+                  {primary.label}
                 </Link>
-                <Link href="#fonctionnement" className="btn btn-ghost">
-                  Voir comment ça fonctionne
+                <Link href="#comment-ca-marche" className="btn btn-ghost">
+                  Voir comment ça marche
                 </Link>
               </div>
-              <p className="mt-4 font-mono text-xs text-ink-60">
-                Inscription gratuite · Aucun paiement n&apos;est déclenché à cette étape
-              </p>
             </div>
 
-            {/* Encadré tarifaire : chiffres issus de src/lib/config.ts uniquement */}
-            <aside className="card bg-paper p-6" aria-label="Conditions d'accès">
-              <p className="eyebrow">Avant de t&apos;engager</p>
-              <dl className="mt-4 divide-y divide-ink/15 font-mono text-sm">
-                <div className="flex items-baseline justify-between py-3">
-                  <dt className="text-ink-60">Inscription</dt>
+            <aside className="card" aria-label="Les montants à connaître">
+              <p className="eyebrow">Avant de t’engager</p>
+              <dl className="mt-4 divide-y-2 divide-ink/15 font-mono text-sm">
+                <div className="flex justify-between gap-4 py-2">
+                  <dt>Inscription</dt>
                   <dd className="font-bold">Gratuite</dd>
                 </div>
-                <div className="flex items-baseline justify-between py-3">
-                  <dt className="text-ink-60">Adhésion</dt>
+                <div className="flex justify-between gap-4 py-2">
+                  <dt>Adhésion (une fois)</dt>
                   <dd className="font-bold">{formatFcfa(ADHESION_FEE)}</dd>
                 </div>
-                <div className="flex items-baseline justify-between py-3">
-                  <dt className="text-ink-60">Bonus parrainage</dt>
+                <div className="flex justify-between gap-4 py-2">
+                  <dt>Bonus parrainage</dt>
                   <dd className="font-bold">{formatFcfa(REFERRAL_BONUS)}</dd>
                 </div>
-                <div className="flex items-baseline justify-between py-3">
-                  <dt className="text-ink-60">Retrait minimum</dt>
+                <div className="flex justify-between gap-4 py-2">
+                  <dt>Retrait minimum</dt>
                   <dd className="font-bold">{formatFcfa(MIN_WITHDRAWAL)}</dd>
                 </div>
+                <div className="flex justify-between gap-4 py-2">
+                  <dt>Frais de retrait</dt>
+                  <dd className="font-bold">{feePercent}</dd>
+                </div>
               </dl>
-              <p className="mt-4 font-mono text-[11px] leading-relaxed text-ink-60">
-                Le détail des frais et conditions est affiché avant toute transaction.
-              </p>
             </aside>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* ===== [02] Méthode ===== */}
-      <section
-        id="fonctionnement"
-        className="border-b-3 border-ink bg-paper"
-        aria-labelledby="steps-title"
-      >
-        <div className="mx-auto max-w-6xl px-5 py-16 md:py-20">
-          <div className="rule" />
-          <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
-            <p className="eyebrow">[ 02 ] — Comment ça fonctionne</p>
-            <p className="font-mono text-xs text-ink-60">3 étapes</p>
-          </div>
-          <h2
-            id="steps-title"
-            className="mt-4 max-w-2xl font-serif text-4xl font-black md:text-5xl"
-          >
-            Pas besoin de tout savoir avant de commencer.
-          </h2>
-
-          <ol className="mt-10 grid gap-6 sm:grid-cols-3">
-            {steps.map((s) => (
-              <li key={s.num} className="card p-6">
-                <span className="font-mono text-5xl font-black text-flame">{s.num}</span>
-                <h3 className="mt-4 font-serif text-xl font-bold">{s.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-ink-60">{s.desc}</p>
-              </li>
-            ))}
-          </ol>
-
-          <div className="mt-10">
-            <Link href="/formations" className="btn btn-primary">
-              Commencer avec le jour 1
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ===== [03] Parcours de transformation ===== */}
-      <section className="border-b-3 border-ink bg-ink text-paper" aria-labelledby="journey-title">
-        <div className="mx-auto max-w-6xl px-5 py-16 md:py-20">
-          <div className="flex flex-wrap items-end justify-between gap-4 border-t-3 border-acid pt-4">
-            <p className="eyebrow !text-acid">[ 03 ] — Le parcours</p>
-            <p className="font-mono text-xs text-paper/60">Progression visible</p>
-          </div>
-          <h2
-            id="journey-title"
-            className="mt-4 max-w-2xl font-serif text-4xl font-black text-paper md:text-5xl"
-          >
-            De l&apos;intention à une première réalisation.
-          </h2>
-
-          <div className="mt-10 grid gap-6 md:grid-cols-3">
-            <div className="border-3 border-paper/25 p-6">
-              <p className="font-mono text-xs uppercase tracking-widest text-paper/60">
-                Point de départ
-              </p>
-              <p className="mt-3 font-serif text-xl font-bold text-paper">
-                « Je ne sais pas par où commencer. »
-              </p>
-            </div>
-            <div className="border-3 border-paper/25 p-6">
-              <p className="font-mono text-xs uppercase tracking-widest text-paper/60">
-                En avançant
-              </p>
-              <p className="mt-3 font-serif text-xl font-bold text-paper">
-                « Je comprends, je teste, je réalise. »
-              </p>
-            </div>
-            <div className="border-3 border-acid bg-acid p-6 text-ink">
-              <p className="font-mono text-xs uppercase tracking-widest text-ink/70">
-                Résultat visé
-              </p>
-              <p className="mt-3 font-serif text-xl font-bold">
-                « J&apos;ai un profil, une offre ou une première mission. »
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-10 flex flex-wrap gap-4">
-            <Link href="/formations" className="btn bg-acid text-ink hover:bg-paper">
-              Découvrir les formations
-            </Link>
-            <Link
-              href="/dashboard/missions"
-              className="btn border-3 border-paper bg-transparent text-paper hover:bg-paper hover:text-ink"
-            >
-              Consulter les missions disponibles
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* ===== [04] Services ===== */}
-      <section className="border-b-3 border-ink bg-paper" aria-labelledby="services-title">
-        <div className="mx-auto max-w-6xl px-5 py-16 md:py-20">
-          <div className="rule" />
-          <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
-            <p className="eyebrow">[ 04 ] — Ce que tu peux faire ici</p>
-            <p className="font-mono text-xs text-ink-60">06 rubriques</p>
-          </div>
-          <h2 id="services-title" className="mt-4 font-serif text-4xl font-black md:text-5xl">
-            Un espace, six façons d&apos;avancer.
-          </h2>
-
-          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {services.map((s, i) => (
-              <Link
-                key={s.title}
-                href={s.href}
-                className={`card group p-6 transition-transform hover:-translate-y-1 ${i % 3 === 0 ? 'bg-acid' : 'bg-paper'}`}
-              >
-                <h3 className="font-serif text-2xl font-bold">{s.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-ink-60">{s.desc}</p>
-                <p className="mt-4 border-t border-ink/20 pt-3 font-mono text-xs font-bold uppercase tracking-wide">
-                  {s.price}
-                </p>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ===== [05] Transparence ===== */}
-      <section className="border-b-3 border-ink bg-paper-2" aria-labelledby="trust-title">
-        <div className="mx-auto max-w-6xl px-5 py-16 md:py-20">
-          <div className="rule" />
-          <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
-            <p className="eyebrow">[ 05 ] — Transparence</p>
-            <p className="font-mono text-xs text-ink-60">
-              Ce qui est garanti, ce qui ne l&apos;est pas
+        {/* Services */}
+        <section
+          id="services"
+          className="scroll-mt-20 border-b-3 border-ink"
+          aria-labelledby="services-title"
+        >
+          <div className="container section">
+            <p className="eyebrow">[ 01 ] Services</p>
+            <h2 id="services-title" className="mt-3 text-4xl md:text-5xl">
+              Ce que tu trouves ici.
+            </h2>
+            <p className="mt-3 max-w-2xl text-ink-70">
+              Chaque service s’ouvre après connexion
+              {signedIn ? ' : tu es connecté, choisis où aller.' : '.'}
             </p>
-          </div>
-          <h2
-            id="trust-title"
-            className="mt-4 max-w-2xl font-serif text-4xl font-black md:text-5xl"
-          >
-            Avant de rejoindre Izzibusiness, tu sais ce que tu obtiens.
-          </h2>
-
-          <div className="mt-10 grid gap-6 sm:grid-cols-2">
-            {trustModules.map((t) => (
-              <div key={t.title} className="card flex items-start gap-4 bg-paper p-6">
-                <div>
-                  <h3 className="font-serif text-xl font-bold">{t.title}</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-ink-60">{t.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Social proof honnête : aucune donnée fictive tant que rien n'est vérifiable */}
-          <div className="card mt-10 bg-paper p-6">
-            <p className="eyebrow">[ Statut de la plateforme ]</p>
-            <p className="mt-3 max-w-3xl font-serif text-lg leading-snug md:text-xl">
-              Izzibusiness vient d&apos;ouvrir. Les premiers membres construisent actuellement leur
-              parcours — les retours vérifiés, publiés avec l&apos;accord de leurs auteurs,
-              apparaîtront ici.
-            </p>
-            <ul className="mt-4 grid list-[square] gap-2 pl-5 font-mono text-xs uppercase tracking-wide text-ink-60 sm:grid-cols-2">
-              <li>Inscription gratuite, sans carte bancaire</li>
-              <li>Montant affiché avant chaque confirmation</li>
-              <li>Retrait mobile money dès {formatFcfa(MIN_WITHDRAWAL)}</li>
-              <li>Historique de ton wallet consultable</li>
+            <ul className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {SERVICES.map((s) => (
+                <li key={s.title} className="card flex flex-col">
+                  <h3 className="text-2xl">{s.title}</h3>
+                  <p className="mt-2 flex-1 text-ink-70">{s.desc}</p>
+                  <p className="mt-4 border-t-2 border-ink/15 pt-3 font-mono text-xs font-bold uppercase tracking-wide">
+                    {s.note}
+                  </p>
+                  <Link
+                    href={signedIn ? s.href : `/login?redirect=${encodeURIComponent(s.href)}`}
+                    className="mt-4 font-bold underline underline-offset-4"
+                  >
+                    {signedIn ? `Ouvrir : ${s.title}` : `Se connecter pour accéder`}
+                    <span className="sr-only"> à {s.title}</span>
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
+        </section>
 
-          <div className="mt-8 flex flex-wrap gap-4">
-            <Link href="/formations" className="btn btn-ghost">
-              Voir les tarifs
-            </Link>
-            <Link href="/dashboard/wallet" className="btn btn-ghost">
-              Comprendre les paiements
-            </Link>
-            <Link href="/contact" className="btn btn-ghost">
-              Poser une question
-            </Link>
+        {/* Comment ça marche */}
+        <section
+          id="comment-ca-marche"
+          className="scroll-mt-20 border-b-3 border-ink bg-ink text-paper"
+          aria-labelledby="how-title"
+        >
+          <div className="container section">
+            <p className="eyebrow !text-acid">[ 02 ] Comment ça marche</p>
+            <h2 id="how-title" className="mt-3 text-4xl md:text-5xl">
+              Quatre étapes, dans l’ordre.
+            </h2>
+            <ol className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+              {STEPS.map((step, i) => (
+                <li key={step.title} className="border-3 border-paper p-6">
+                  <span className="font-mono text-3xl font-bold text-acid">
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <h3 className="mt-3 text-2xl">{step.title}</h3>
+                  <p className="mt-2 text-paper/80">{step.desc}</p>
+                </li>
+              ))}
+            </ol>
+            {!signedIn && (
+              <Link href="/register" className="btn btn-primary mt-10">
+                Commencer par l’étape 1
+              </Link>
+            )}
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* ===== [06] CTA final ===== */}
-      <section className="bg-ink" aria-labelledby="cta-title">
-        <div className="mx-auto max-w-6xl px-5 py-16 text-center md:py-24">
-          <p className="eyebrow !text-acid">[ 06 ] — Rejoindre</p>
-          <h2
-            id="cta-title"
-            className="mx-auto mt-4 max-w-3xl font-serif text-4xl font-black text-paper md:text-6xl"
-          >
-            Commence gratuitement, décide ensuite.
-          </h2>
-          <p className="mx-auto mt-5 max-w-xl text-paper/70">
-            Crée ton compte sans payer et explore la plateforme. L&apos;adhésion —{' '}
-            {formatFcfa(ADHESION_FEE)}, paiement unique — ouvre l&apos;accès complet quand tu es
-            prêt.
-          </p>
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-            <Link href="/register" className="btn bg-acid text-ink hover:bg-paper">
-              Créer mon compte gratuit
-            </Link>
-            <Link
-              href="/contact"
-              className="btn border-3 border-paper bg-transparent text-paper hover:bg-paper hover:text-ink"
-            >
-              Parler à l&apos;équipe support
-            </Link>
+        {/* FAQ */}
+        <section
+          id="faq"
+          className="scroll-mt-20 border-b-3 border-ink"
+          aria-labelledby="faq-title"
+        >
+          <div className="container section grid gap-10 lg:grid-cols-[1fr_2fr]">
+            <div>
+              <p className="eyebrow">[ 03 ] FAQ</p>
+              <h2 id="faq-title" className="mt-3 text-4xl md:text-5xl">
+                Questions fréquentes.
+              </h2>
+              <p className="mt-3 text-ink-70">
+                Une autre question ?{' '}
+                <Link href="/contact" className="font-bold underline underline-offset-4">
+                  Écris à l’équipe
+                </Link>
+                .
+              </p>
+            </div>
+            <div className="border-t-3 border-ink">
+              {FAQ.map((item) => (
+                <details key={item.q} className="group border-b-3 border-ink">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-5 text-xl font-bold [&::-webkit-details-marker]:hidden">
+                    {item.q}
+                    <span
+                      aria-hidden="true"
+                      className="font-mono text-2xl transition-transform group-open:rotate-45"
+                    >
+                      +
+                    </span>
+                  </summary>
+                  <p className="pb-5 text-ink-70">{item.a}</p>
+                </details>
+              ))}
+            </div>
           </div>
-          <p className="mt-4 font-mono text-xs text-paper/60">
-            Aucun paiement n&apos;est déclenché à la création du compte.
-          </p>
-        </div>
-      </section>
+        </section>
 
+        {/* Appel final */}
+        {!signedIn && (
+          <section className="bg-acid" aria-labelledby="cta-title">
+            <div className="container section text-center">
+              <h2 id="cta-title" className="text-4xl md:text-5xl">
+                Ton compte est gratuit.
+              </h2>
+              <p className="mx-auto mt-3 max-w-xl">
+                Crée-le maintenant, découvre ton espace, et décide ensuite si tu actives l’adhésion.
+              </p>
+              <Link href="/register" className="btn btn-dark mt-8">
+                Créer mon compte gratuit
+              </Link>
+            </div>
+          </section>
+        )}
+      </main>
       <Footer />
-    </main>
+    </>
   );
 }

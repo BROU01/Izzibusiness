@@ -18,9 +18,9 @@ const facts = [
     desc: 'Un seul paiement pour accéder au catalogue. Le détail est affiché avant confirmation.',
   },
   {
-    value: '0 %',
-    label: 'Commission marketplace',
-    desc: 'Vends tes produits et services entre membres sans commission prélevée par la plateforme.',
+    value: 'Serveur',
+    label: 'Tirage des jeux',
+    desc: 'Chaque résultat est tiré côté serveur avant d’être affiché, et vérifiable après la partie.',
   },
 ];
 

@@ -5,6 +5,9 @@ import Footer from '@/components/Footer';
 import {
   formatFcfa,
   ADHESION_FEE,
+  GAME_RTP,
+  MAX_BET,
+  MIN_BET,
   MIN_WITHDRAWAL,
   WITHDRAWAL_FEE_RATE,
   MIN_DEPOSIT,
@@ -25,7 +28,7 @@ const sections = [
     id: 'compte',
     title: '1. Ton compte',
     items: [
-      "L'inscription est gratuite et se fait avec ton nom et un numéro de téléphone valide.",
+      "L'inscription est gratuite. Elle demande un pseudo, une adresse e-mail, ton pays, un numéro de téléphone Mobile Money valide et un mot de passe.",
       'Tu es responsable de la confidentialité de ton accès. Les actions réalisées depuis ton compte sont réputées être les tiennes.',
       'Un seul compte par personne. Les comptes créés pour manipuler les récompenses, le parrainage ou le classement peuvent être suspendus.',
     ],
@@ -35,25 +38,25 @@ const sections = [
     title: '2. Adhésion et paiements',
     items: [
       `L'adhésion coûte ${formatFcfa(ADHESION_FEE)}, paiement unique, affiché avant toute confirmation. Elle ouvre l'accès complet aux formations, missions, jeux et retraits.`,
-      'Les dépôts se font via mobile money. Le montant minimum de dépôt est affiché au moment du paiement.',
+      `Les dépôts se font par Mobile Money via notre prestataire de paiement PayDunya, à partir de ${formatFcfa(MIN_DEPOSIT)}. Le wallet est crédité dès que l'opérateur confirme le paiement.`,
       `Le retrait minimum est de ${formatFcfa(MIN_WITHDRAWAL)}. Des frais de ${Math.round(WITHDRAWAL_FEE_RATE * 100)} % s'appliquent et sont affichés avant confirmation.`,
-      "Un retrait est traité sous 1 à 24 heures. En cas d'incident, contacte le support : la transaction est traçable dans ton historique.",
+      "Un retrait est envoyé uniquement vers le numéro enregistré sur ton compte. Le montant et les frais sont bloqués dès la demande, puis l'équipe vérifie et déclenche l'envoi. En cas de refus ou d'échec, la totalité est restituée sur ton wallet.",
     ],
   },
   {
     id: 'jeux',
-    title: '3. Mini-jeux',
+    title: '3. Jeux',
     items: [
-      'Les mini-jeux utilisent le solde de jeux, distinct du solde principal. Une mise est débitée à chaque partie.',
-      "Les gains ne sont jamais garantis : ils dépendent du hasard du jeu et de tes décisions d'encaissement.",
-      "Joue de manière responsable. Ne mise que des montants dont tu n'as pas besoin.",
+      'Les jeux sont réservés aux adhérents majeurs (18 ans ou plus) qui ont accepté leurs règles. Les mises sont débitées du wallet et les gains y sont crédités.',
+      `Les mises vont de ${formatFcfa(MIN_BET)} à ${formatFcfa(MAX_BET)} par partie. Chaque résultat est tiré par le serveur ; sur la durée, environ ${Math.round(GAME_RTP * 100)} % des mises sont redistribuées aux joueurs.`,
+      "Les gains ne sont jamais garantis. Joue de manière responsable et ne mise que des montants dont tu n'as pas besoin. L'administration peut fermer un jeu à tout moment ; les parties en cours restent honorées.",
     ],
   },
   {
     id: 'marketplace',
     title: '4. Marketplace',
     items: [
-      'La marketplace met en relation des membres. Izzibusiness ne prélève aucune commission sur les ventes (0 %).',
+      "La marketplace met en relation des membres. Ses conditions de vente, y compris d'éventuels frais, seront publiées ici avant son ouverture.",
       'Les vendeurs sont responsables de la description, du prix et de la livraison de leurs offres. Les acheteurs vérifient avant de payer.',
       'Les offres illégales, trompeuses ou portant atteinte à autrui sont retirées et le compte concerné peut être suspendu.',
     ],
