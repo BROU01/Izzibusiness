@@ -8,7 +8,7 @@ import { FormAlert, PasswordField } from '@/components/auth/FormField';
 import { postJson } from '@/lib/api-client';
 import { fieldErrors, PASSWORD_MIN, resetPasswordSchema } from '@/lib/auth/schemas';
 
-export default function ResetPasswordForm() {
+export default function ResetPasswordForm({ token }: { token: string | null }) {
   const router = useRouter();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -28,7 +28,10 @@ export default function ResetPasswordForm() {
     }
 
     setSubmitting(true);
-    const result = await postJson<{ status: string }>('/api/auth/reset-password', parsed.data);
+    const result = await postJson<{ status: string }>('/api/auth/reset-password', {
+      ...parsed.data,
+      token,
+    });
     setSubmitting(false);
 
     if (!result.ok) {
@@ -37,19 +40,39 @@ export default function ResetPasswordForm() {
       return;
     }
 
-    router.replace('/dashboard');
-    router.refresh();
+    router.replace('/login?reset=1');
+  }
+
+  if (!token) {
+    return (
+      <AuthShell
+        eyebrow="Récupération"
+        title="Ce lien n’est plus valable."
+        intro="Un lien de réinitialisation sert une seule fois et expire au bout d’une heure."
+        footer={
+          <p>
+            <Link href="/login" className="font-bold underline underline-offset-4">
+              Retour à la connexion
+            </Link>
+          </p>
+        }
+      >
+        <Link href="/forgot-password" className="btn btn-primary w-full">
+          Recevoir un nouveau lien
+        </Link>
+      </AuthShell>
+    );
   }
 
   return (
     <AuthShell
       eyebrow="Récupération"
       title="Choisis un nouveau mot de passe."
-      intro="Il remplacera l’ancien immédiatement sur tous tes appareils."
+      intro="Il remplacera l’ancien immédiatement. Tes autres appareils seront déconnectés."
       footer={
         <p>
-          <Link href="/dashboard" className="font-bold underline underline-offset-4">
-            Aller au tableau de bord sans changer
+          <Link href="/login" className="font-bold underline underline-offset-4">
+            Retour à la connexion
           </Link>
         </p>
       }

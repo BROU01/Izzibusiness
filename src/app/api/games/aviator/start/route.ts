@@ -13,7 +13,7 @@ export async function POST(request: Request) {
       return apiError(ERROR_CODES.INVALID_PAYLOAD, parsed.error.issues[0].message, 400);
     }
 
-    const round = await openRound(player.admin, player.userId, 'aviator', parsed.data.bet);
+    const round = await openRound(player.userId, 'aviator', parsed.data.bet);
     if (!round.result.success) return rpcFailure(round.result);
 
     return apiData({

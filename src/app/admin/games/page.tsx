@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { LoadError, formatDate } from '@/components/admin/DataTable';
-import { createClient } from '@/lib/supabase/server';
+import { load, requireAdminPage } from '../_lib/load';
 import { GAME_RTP, MAX_BET, MIN_BET, formatFcfa } from '@/lib/config';
 import { GAME_LABELS, ROUND_STATUS } from '@/lib/labels';
 import GameToggles from './GameToggles';
@@ -15,24 +15,45 @@ function windowStart(): string {
 
 /** Jeux : ouverture, résultats par jeu sur 30 jours, dernières parties. */
 export default async function AdminGamesPage() {
-  const supabase = await createClient();
+  await requireAdminPage();
   const since = windowStart();
   const [settings, rounds, recent] = await Promise.all([
-    supabase.from('app_settings').select('value').eq('key', 'games_enabled').maybeSingle(),
-    supabase.from('game_rounds').select('game, bet, payout').gte('started_at', since).limit(50000),
-    supabase
-      .from('game_rounds')
-      .select('id, user_id, game, bet, status, multiplier, payout, started_at')
-      .order('started_at', { ascending: false })
-      .limit(30),
+    load<{ value: Record<string, boolean> }>(
+      "select value from app_settings where key = 'games_enabled'",
+    ),
+    // Agrégats calculés en base (plus de plafond de 50 000 lignes lues).
+    load<{ game: string; count: number; bets: string; payouts: string }>(
+      `select game, count(*)::int as count,
+              coalesce(sum(bet), 0) as bets, coalesce(sum(payout), 0) as payouts
+         from game_rounds
+        where started_at >= $1
+        group by game`,
+      [since],
+    ),
+    load<{
+      id: string;
+      user_id: string;
+      game: string;
+      bet: string;
+      status: string;
+      multiplier: string;
+      payout: string;
+      started_at: Date;
+    }>(
+      `select id, user_id, game, bet, status, multiplier, payout, started_at
+         from game_rounds
+        order by started_at desc
+        limit 30`,
+    ),
   ]);
 
-  const enabled = (settings.data?.value ?? {}) as Record<string, boolean>;
+  const enabled = settings.data[0]?.value ?? {};
   const perGame = ['aviator', 'spin', 'apple'].map((game) => {
-    const rows = (rounds.data ?? []).filter((r) => r.game === game);
-    const bets = rows.reduce((s, r) => s + Number(r.bet), 0);
-    const payouts = rows.reduce((s, r) => s + Number(r.payout), 0);
-    return { game, count: rows.length, bets, payouts, rtp: bets > 0 ? payouts / bets : null };
+    const row = rounds.data.find((r) => r.game === game);
+    const bets = Number(row?.bets ?? 0);
+    const payouts = Number(row?.payouts ?? 0);
+    const count = row?.count ?? 0;
+    return { game, count, bets, payouts, rtp: bets > 0 ? payouts / bets : null };
   });
 
   return (

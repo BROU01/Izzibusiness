@@ -4,6 +4,7 @@ import { apiData, apiError, asRpcResult, internalError, readJson } from '@/lib/a
 import { requireAdmin } from '@/lib/admin-api';
 import { payWithdrawal, refreshWithdrawalStatus } from '@/lib/payments/withdrawals';
 import { createNotification } from '@/lib/notifications';
+import { callFunction, queryOne } from '@/lib/db';
 
 const schema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('pay') }),
@@ -43,18 +44,16 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return apiData({ status });
     }
 
-    const { data: row } = await guard.db
-      .from('withdrawals')
-      .select('user_id, amount')
-      .eq('id', id)
-      .maybeSingle();
-    const { data, error } = await guard.db.rpc('refund_withdrawal', {
-      p_id: id,
-      p_status: 'rejected',
-      p_note: parsed.data.note,
-      p_admin: guard.adminId,
-    });
-    if (error) return internalError('admin withdrawal reject', error);
+    const row = await queryOne<{ user_id: string }>(
+      'select user_id from withdrawals where id = $1',
+      [id],
+    );
+    const data = await callFunction('refund_withdrawal', [
+      id,
+      'rejected',
+      parsed.data.note,
+      guard.adminId,
+    ]);
     const result = asRpcResult(data);
     if (!result.success) {
       return apiError(ERROR_CODES.CONFLICT, result.error ?? 'Refus impossible.', 409);

@@ -22,7 +22,7 @@ des missions rémunérées, des jeux à mises réelles et un wallet Mobile Money
 
 - **Frontend** : Next.js 16 (App Router), React 19, TypeScript
 - **Styles** : Tailwind CSS 4, design system néobrutaliste (`DESIGN.md`)
-- **Backend** : Supabase (PostgreSQL + RLS)
+- **Backend** : Neon (PostgreSQL serverless) + Better Auth
 - **Paiements** : PayDunya
 
 ## Licence

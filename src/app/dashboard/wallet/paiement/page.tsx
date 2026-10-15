@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import PageHeader from '@/components/ui/PageHeader';
-import { createClient } from '@/lib/supabase/server';
+import { queryOne } from '@/lib/db';
+import { getSessionUser } from '@/lib/session';
 import { syncPaymentFromProvider, type SyncOutcome } from '@/lib/payments/sync';
 
 export const dynamic = 'force-dynamic';
@@ -32,17 +33,15 @@ export default async function PaymentReturnPage({
   let outcome: SyncOutcome = 'unknown';
 
   if (token && /^[A-Za-z0-9_-]{6,128}$/.test(token)) {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    // Le paiement doit appartenir au visiteur (RLS payments_select_own).
-    const { data: payment } = await supabase
-      .from('payments')
-      .select('id')
-      .eq('provider_token', token)
-      .maybeSingle();
-    if (user && payment) {
+    const user = await getSessionUser();
+    // Le paiement doit appartenir au visiteur.
+    const payment = user
+      ? await queryOne('select 1 from payments where provider_token = $1 and user_id = $2', [
+          token,
+          user.id,
+        ])
+      : null;
+    if (payment) {
       try {
         outcome = await syncPaymentFromProvider(token);
       } catch {

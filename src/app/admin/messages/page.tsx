@@ -1,19 +1,27 @@
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { LoadError, formatDate } from '@/components/admin/DataTable';
 import ActionButton from '@/components/admin/ActionButton';
-import { createClient } from '@/lib/supabase/server';
+import { load, requireAdminPage } from '../_lib/load';
 import { MESSAGE_STATUS } from '@/lib/labels';
 
 export const dynamic = 'force-dynamic';
 
 /** Messages reçus par le formulaire de contact. */
 export default async function AdminMessagesPage() {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from('contact_messages')
-    .select('id, name, email, message, status, created_at')
-    .order('created_at', { ascending: false })
-    .limit(200);
+  await requireAdminPage();
+  const { data, error } = await load<{
+    id: string;
+    name: string;
+    email: string | null;
+    message: string;
+    status: string;
+    created_at: Date;
+  }>(
+    `select id, name, email, message, status, created_at
+       from contact_messages
+      order by created_at desc
+      limit 200`,
+  );
 
   return (
     <div>

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { LoadError, formatDate } from '@/components/admin/DataTable';
-import { createClient } from '@/lib/supabase/server';
+import { load, requireAdminPage } from './_lib/load';
 import { formatFcfa } from '@/lib/config';
 
 export const dynamic = 'force-dynamic';
@@ -40,16 +40,24 @@ const TX_LABELS: Record<string, string> = {
 
 /** Vue d'ensemble : chiffres des 30 derniers jours et files d'attente à traiter. */
 export default async function AdminDashboard() {
-  const supabase = await createClient();
+  await requireAdminPage();
   const [statsRes, recent] = await Promise.all([
-    supabase.rpc('admin_stats'),
-    supabase
-      .from('transactions')
-      .select('id, user_id, type, amount, description, created_at')
-      .order('created_at', { ascending: false })
-      .limit(15),
+    load<{ stats: Stats }>('select admin_stats() as stats'),
+    load<{
+      id: string;
+      user_id: string;
+      type: string;
+      amount: string;
+      description: string | null;
+      created_at: Date;
+    }>(
+      `select id, user_id, type, amount, description, created_at
+         from transactions
+        order by created_at desc
+        limit 15`,
+    ),
   ]);
-  const stats = (statsRes.data ?? null) as Stats | null;
+  const stats = statsRes.data[0]?.stats ?? null;
   const n = (v: number | undefined) => Number(v ?? 0);
   const margin = n(stats?.game_bets) - n(stats?.game_payouts);
 

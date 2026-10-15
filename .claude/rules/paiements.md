@@ -27,12 +27,12 @@ alwaysApply: false
    chez PayDunya (`confirmInvoice`) et comparer le montant.
 2. Idempotence : `transactions.reference_id` est unique ; chaque crédit porte une
    référence (`pd:<token>`, `win:<round>`, `wd-refund:<id>`…).
-3. Tout mouvement de solde passe par une fonction SQL `SECURITY DEFINER` réservée au
-   `service_role` (migrations 006/007), jamais par lecture puis écriture.
+3. Tout mouvement de solde passe par une fonction SQL atomique appelée depuis le
+   serveur (`db/migrations/001_schema.sql`), jamais par lecture puis écriture.
 4. Respecter `src/lib/config.ts` : `MIN_DEPOSIT`, `MAX_DEPOSIT`, `MIN_WITHDRAWAL`,
    `WITHDRAWAL_FEE_RATE`, `ADHESION_FEE`, `MIN_BET`, `MAX_BET`, `GAME_RTP`.
 5. Aucune clé dans le client : `PAYDUNYA_MASTER_KEY`, `PAYDUNYA_PRIVATE_KEY`,
-   `PAYDUNYA_TOKEN`, `SUPABASE_SERVICE_ROLE_KEY` restent côté serveur.
+   `PAYDUNYA_TOKEN`, `DATABASE_URL`, `BETTER_AUTH_SECRET` restent côté serveur.
 6. Réponses d'erreur `{ error: { code, message } }` (`src/lib/api-response.ts`),
    jamais de stack trace.
 7. Jeux : le résultat est toujours tiré côté serveur ; le client n'envoie jamais un

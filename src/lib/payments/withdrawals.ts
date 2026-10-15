@@ -1,4 +1,4 @@
-import { createServiceClient } from '@/lib/supabase/server';
+import { callFunction, query, queryOne } from '@/lib/db';
 import {
   checkDisburseStatus,
   createDisburseInvoice,
@@ -20,22 +20,24 @@ export function toAccountAlias(e164: string): string {
 interface WithdrawalRow {
   id: string;
   user_id: string;
-  amount: number;
+  /** numeric renvoyé en texte par pg. */
+  amount: string;
   status: string;
   phone: string;
   withdraw_mode: string;
   disburse_token: string | null;
 }
 
+const ROW_COLUMNS = 'id, user_id, amount, status, phone, withdraw_mode, disburse_token';
+
 async function markPaid(row: WithdrawalRow, providerRef: string | null, raw: unknown) {
-  const admin = createServiceClient();
-  const { data } = await admin
-    .from('withdrawals')
-    .update({ status: 'paid', provider_ref: providerRef, provider_payload: raw })
-    .eq('id', row.id)
-    .eq('status', 'processing')
-    .select('id');
-  if (data && data.length > 0) {
+  const updated = await query(
+    `update withdrawals set status = 'paid', provider_ref = $2, provider_payload = $3
+      where id = $1 and status = 'processing'
+      returning id`,
+    [row.id, providerRef, JSON.stringify(raw ?? null)],
+  );
+  if (updated.length > 0) {
     await createNotification({
       userId: row.user_id,
       title: 'Retrait envoyé',
@@ -47,13 +49,7 @@ async function markPaid(row: WithdrawalRow, providerRef: string | null, raw: unk
 }
 
 async function markFailed(row: WithdrawalRow, reason: string, adminId: string | null) {
-  const admin = createServiceClient();
-  await admin.rpc('refund_withdrawal', {
-    p_id: row.id,
-    p_status: 'failed',
-    p_note: reason.slice(0, 500),
-    p_admin: adminId,
-  });
+  await callFunction('refund_withdrawal', [row.id, 'failed', reason.slice(0, 500), adminId]);
   await createNotification({
     userId: row.user_id,
     title: 'Retrait non abouti',
@@ -73,15 +69,12 @@ export async function payWithdrawal(params: {
   adminId: string;
   requestUrl: string;
 }): Promise<{ status: 'paid' | 'processing' | 'failed' | 'requested'; message: string }> {
-  const admin = createServiceClient();
-
-  const { data: locked } = await admin
-    .from('withdrawals')
-    .update({ status: 'processing', reviewed_by: params.adminId })
-    .eq('id', params.withdrawalId)
-    .eq('status', 'requested')
-    .select('id, user_id, amount, status, phone, withdraw_mode, disburse_token');
-  const row = (locked?.[0] ?? null) as WithdrawalRow | null;
+  const row = await queryOne<WithdrawalRow>(
+    `update withdrawals set status = 'processing', reviewed_by = $2
+      where id = $1 and status = 'requested'
+      returning ${ROW_COLUMNS}`,
+    [params.withdrawalId, params.adminId],
+  );
   if (!row) {
     return { status: 'failed', message: 'Retrait introuvable ou déjà traité.' };
   }
@@ -97,15 +90,15 @@ export async function payWithdrawal(params: {
   } catch (error) {
     // Rien n'a été envoyé : le retrait repasse en attente pour un nouvel essai.
     const message = error instanceof Error ? error.message : 'Erreur PayDunya';
-    await admin
-      .from('withdrawals')
-      .update({ status: 'requested', admin_note: `Préparation refusée : ${message}`.slice(0, 500) })
-      .eq('id', row.id)
-      .eq('status', 'processing');
+    await query(
+      `update withdrawals set status = 'requested', admin_note = $2
+        where id = $1 and status = 'processing'`,
+      [row.id, `Préparation refusée : ${message}`.slice(0, 500)],
+    );
     return { status: 'requested', message: `PayDunya a refusé la préparation : ${message}` };
   }
 
-  await admin.from('withdrawals').update({ disburse_token: disburseToken }).eq('id', row.id);
+  await query('update withdrawals set disburse_token = $2 where id = $1', [row.id, disburseToken]);
 
   try {
     const result = await submitDisburseInvoice(disburseToken, row.id);
@@ -134,16 +127,15 @@ export async function refreshWithdrawalStatus(
   key: { withdrawalId: string } | { disburseToken: string },
   adminId: string | null = null,
 ): Promise<DisburseStatus | 'unknown'> {
-  const admin = createServiceClient();
-  let query = admin
-    .from('withdrawals')
-    .select('id, user_id, amount, status, phone, withdraw_mode, disburse_token');
-  query =
+  const row =
     'withdrawalId' in key
-      ? query.eq('id', key.withdrawalId)
-      : query.eq('disburse_token', key.disburseToken);
-  const { data } = await query.maybeSingle();
-  const row = data as WithdrawalRow | null;
+      ? await queryOne<WithdrawalRow>(`select ${ROW_COLUMNS} from withdrawals where id = $1`, [
+          key.withdrawalId,
+        ])
+      : await queryOne<WithdrawalRow>(
+          `select ${ROW_COLUMNS} from withdrawals where disburse_token = $1`,
+          [key.disburseToken],
+        );
   if (!row || !row.disburse_token || row.status !== 'processing') return 'unknown';
 
   const result = await checkDisburseStatus(row.disburse_token);

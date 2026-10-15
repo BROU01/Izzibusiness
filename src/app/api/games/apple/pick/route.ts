@@ -13,13 +13,13 @@ export async function POST(request: Request) {
       return apiError(ERROR_CODES.INVALID_PAYLOAD, 'Case invalide.', 400);
     }
 
-    const round = await loadRound(player.admin, player.userId, parsed.data.roundId, 'apple');
+    const round = await loadRound(player.userId, parsed.data.roundId, 'apple');
     if (!round) return apiError(ERROR_CODES.NOT_FOUND, 'Partie introuvable.', 404);
     if (round.status !== 'active') {
       return apiError(ERROR_CODES.CONFLICT, 'Cette partie est terminée.', 409);
     }
 
-    const result = await applePick(player.admin, round, parsed.data.column);
+    const result = await applePick(round, parsed.data.column);
     if (result.outcome === 'conflict') {
       return apiError(
         ERROR_CODES.CONFLICT,

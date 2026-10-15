@@ -4,6 +4,7 @@ import { apiData, apiError, asRpcResult, internalError, readJson } from '@/lib/a
 import { requireAdmin } from '@/lib/admin-api';
 import { createNotification } from '@/lib/notifications';
 import { formatFcfa } from '@/lib/config';
+import { callFunction } from '@/lib/db';
 
 const schema = z
   .object({ approve: z.boolean(), note: z.string().trim().max(500).optional() })
@@ -26,13 +27,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return apiError(ERROR_CODES.INVALID_PAYLOAD, parsed.error.issues[0].message, 400);
     }
 
-    const { data, error } = await guard.db.rpc('review_mission_submission', {
-      p_submission_id: id,
-      p_approve: parsed.data.approve,
-      p_note: parsed.data.note ?? null,
-      p_admin: guard.adminId,
-    });
-    if (error) return internalError('admin submission', error);
+    const data = await callFunction('review_mission_submission', [
+      id,
+      parsed.data.approve,
+      parsed.data.note ?? null,
+      guard.adminId,
+    ]);
     const result = asRpcResult(data);
     if (!result.success) {
       return apiError(ERROR_CODES.CONFLICT, result.error ?? 'Action impossible.', 409);

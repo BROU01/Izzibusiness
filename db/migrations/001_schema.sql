@@ -1,62 +1,203 @@
--- 007_payments_games_missions.sql
--- But : paiements PayDunya (dépôt, adhésion), retraits avec validation admin,
---       jeux à mises réelles tirés côté serveur, missions rémunérées,
---       réglages admin et bannissement de compte.
+-- 001_schema.sql — schéma complet d'Izzibusiness sur Neon (PostgreSQL).
 --
--- Principe : tout mouvement d'argent passe par une fonction SECURITY DEFINER
--- exécutable uniquement par service_role, atomique (une transaction SQL) et
--- idempotente (reference_id unique dans transactions, cf. migration 006).
+-- Remplace les migrations Supabase 001 à 007 (supprimées). Différences :
+--   * Les comptes sont gérés par Better Auth (tables "user", "session",
+--     "account", "verification") au lieu de auth.users.
+--   * Pas de Row Level Security : la base n'est jamais exposée au navigateur.
+--     Seul le serveur Next.js s'y connecte (DATABASE_URL, côté serveur) et
+--     chaque route vérifie la session et le rôle avant toute requête.
+--   * Les identifiants de compte sont des text (format Better Auth).
 --
--- Rollback : bloc « ROLLBACK » en fin de fichier.
-
-begin;
+-- Tout mouvement d'argent passe par une fonction SQL atomique (une seule
+-- transaction) et idempotente (transactions.reference_id unique).
+--
+-- Appliquée par `npm run db:migrate` (scripts/migrate.mjs), qui la rejoue
+-- une seule fois grâce à la table schema_migrations.
+-- Rollback : base vide → `drop schema public cascade; create schema public;`.
 
 -- ============================================================
--- 0. Types de transaction supplémentaires
+-- 1. Comptes (Better Auth 1.7, plugin username)
 -- ============================================================
-alter table public.transactions drop constraint if exists transactions_type_check;
-alter table public.transactions
-  add constraint transactions_type_check
-  check (type in (
+create table "user" (
+  "id" text not null primary key,
+  "name" text not null,
+  "email" text not null unique,
+  "emailVerified" boolean not null,
+  "image" text,
+  "createdAt" timestamptz default current_timestamp not null,
+  "updatedAt" timestamptz default current_timestamp not null,
+  "username" text unique,
+  "displayUsername" text
+);
+
+create table "session" (
+  "id" text not null primary key,
+  "expiresAt" timestamptz not null,
+  "token" text not null unique,
+  "createdAt" timestamptz default current_timestamp not null,
+  "updatedAt" timestamptz not null,
+  "ipAddress" text,
+  "userAgent" text,
+  "userId" text not null references "user" ("id") on delete cascade
+);
+
+create table "account" (
+  "id" text not null primary key,
+  "accountId" text not null,
+  "providerId" text not null,
+  "userId" text not null references "user" ("id") on delete cascade,
+  "accessToken" text,
+  "refreshToken" text,
+  "idToken" text,
+  "accessTokenExpiresAt" timestamptz,
+  "refreshTokenExpiresAt" timestamptz,
+  "scope" text,
+  "password" text,
+  "createdAt" timestamptz default current_timestamp not null,
+  "updatedAt" timestamptz not null
+);
+
+create table "verification" (
+  "id" text not null primary key,
+  "identifier" text not null,
+  "value" text not null,
+  "expiresAt" timestamptz not null,
+  "createdAt" timestamptz default current_timestamp not null,
+  "updatedAt" timestamptz default current_timestamp not null
+);
+
+create index "session_userId_idx" on "session" ("userId");
+create index "account_userId_idx" on "account" ("userId");
+create index "verification_identifier_idx" on "verification" ("identifier");
+
+create function update_updated_at_column()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+-- ============================================================
+-- 2. Profils (données métier du compte ; pseudo et e-mail sont dans "user")
+-- ============================================================
+create table profiles (
+  id text primary key references "user" ("id") on delete cascade,
+  phone text not null unique check (phone ~ '^\+[0-9]{8,15}$'),
+  country text not null check (country ~ '^[A-Z]{2}$'),
+  role text not null default 'user' check (role in ('user', 'admin')),
+  is_member boolean not null default false,
+  is_banned boolean not null default false,
+  referral_code text not null unique,
+  referred_by text,
+  avatar_url text,
+  games_accepted_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index profiles_referred_by_idx on profiles (referred_by);
+
+create trigger update_profiles_updated_at
+  before update on profiles
+  for each row execute function update_updated_at_column();
+
+-- ============================================================
+-- 3. Wallets et historique
+-- ============================================================
+create table wallets (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null unique references "user" ("id") on delete cascade,
+  balance numeric(12, 2) not null default 0 check (balance >= 0),
+  game_balance numeric(12, 2) not null default 0 check (game_balance >= 0),
+  currency text not null default 'FCFA',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create trigger update_wallets_updated_at
+  before update on wallets
+  for each row execute function update_updated_at_column();
+
+create table transactions (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references "user" ("id") on delete cascade,
+  type text not null check (type in (
     'deposit', 'withdraw', 'withdraw_refund', 'game_bet', 'game_win',
     'mission_reward', 'referral_bonus', 'purchase', 'membership', 'adjustment'
-  ));
+  )),
+  amount numeric(12, 2) not null,
+  balance_after numeric(12, 2) not null,
+  description text,
+  -- Idempotence : une référence (pd:<token>, win:<partie>…) ne sert qu'une fois.
+  reference_id text unique,
+  status text not null default 'completed'
+    check (status in ('pending', 'completed', 'failed', 'refunded')),
+  metadata jsonb not null default '{}',
+  created_at timestamptz not null default now()
+);
+
+create index transactions_user_idx on transactions (user_id, created_at desc);
+create index transactions_type_idx on transactions (type);
 
 -- ============================================================
--- 1. Profils : bannissement et accord jeux d'argent
+-- 4. Notifications, messages de contact, programme 20 jours
 -- ============================================================
-alter table public.profiles add column if not exists is_banned boolean not null default false;
-alter table public.profiles add column if not exists games_accepted_at timestamptz;
+create table notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references "user" ("id") on delete cascade,
+  title text not null,
+  message text not null,
+  type text not null check (type in
+    ('info', 'success', 'warning', 'error', 'transaction', 'game', 'referral')),
+  read boolean not null default false,
+  action_url text,
+  metadata jsonb not null default '{}',
+  created_at timestamptz not null default now()
+);
+
+create index notifications_user_idx on notifications (user_id, created_at desc);
+
+create table contact_messages (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(btrim(name)) between 2 and 80),
+  email text check (email is null or char_length(btrim(email)) between 5 and 120),
+  message text not null check (char_length(btrim(message)) between 10 and 2000),
+  status text not null default 'new' check (status in ('new', 'in_progress', 'resolved')),
+  created_at timestamptz not null default now()
+);
+
+create index contact_messages_status_idx on contact_messages (status, created_at desc);
+
+create table program_progress (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references "user" ("id") on delete cascade,
+  day integer not null check (day between 1 and 20),
+  completed_at timestamptz not null default now(),
+  unique (user_id, day)
+);
 
 -- ============================================================
--- 2. Réglages modifiables par l'admin (interrupteurs des jeux…)
+-- 5. Réglages modifiables par l'admin
 -- ============================================================
-create table if not exists public.app_settings (
+create table app_settings (
   key text primary key,
   value jsonb not null,
   updated_at timestamptz not null default now(),
-  updated_by uuid references auth.users(id) on delete set null
+  updated_by text references "user" ("id") on delete set null
 );
 
-alter table public.app_settings enable row level security;
-
-create policy "app_settings_read_authenticated"
-  on public.app_settings for select
-  to authenticated
-  using (true);
-
-revoke insert, update, delete on public.app_settings from anon, authenticated;
-
-insert into public.app_settings (key, value) values
-  ('games_enabled', '{"spin": true, "apple": true, "aviator": true}'::jsonb)
-on conflict (key) do nothing;
+insert into app_settings (key, value) values
+  ('games_enabled', '{"spin": true, "apple": true, "aviator": true}'::jsonb);
 
 -- ============================================================
--- 3. Paiements entrants PayDunya (dépôt wallet, adhésion)
+-- 6. Paiements PayDunya (dépôt, adhésion) et retraits
 -- ============================================================
-create table if not exists public.payments (
+create table payments (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
+  user_id text not null references "user" ("id") on delete cascade,
   kind text not null check (kind in ('deposit', 'membership')),
   amount numeric(12, 2) not null check (amount > 0),
   status text not null default 'pending'
@@ -69,24 +210,12 @@ create table if not exists public.payments (
   completed_at timestamptz
 );
 
-create index if not exists payments_user_idx on public.payments (user_id, created_at desc);
-create index if not exists payments_status_idx on public.payments (status, created_at desc);
+create index payments_user_idx on payments (user_id, created_at desc);
+create index payments_status_idx on payments (status, created_at desc);
 
-alter table public.payments enable row level security;
-
-create policy "payments_select_own" on public.payments
-  for select using (auth.uid() = user_id);
-create policy "payments_admin_select" on public.payments
-  for select using (public.is_admin());
-
-revoke insert, update, delete on public.payments from anon, authenticated;
-
--- ============================================================
--- 4. Retraits (montant bloqué à la demande, payé après validation admin)
--- ============================================================
-create table if not exists public.withdrawals (
+create table withdrawals (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
+  user_id text not null references "user" ("id") on delete cascade,
   amount numeric(12, 2) not null check (amount > 0),
   fee numeric(12, 2) not null default 0 check (fee >= 0),
   phone text not null,
@@ -97,34 +226,27 @@ create table if not exists public.withdrawals (
   provider_ref text,
   provider_payload jsonb,
   admin_note text,
-  reviewed_by uuid references auth.users(id) on delete set null,
+  reviewed_by text references "user" ("id") on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-create index if not exists withdrawals_user_idx on public.withdrawals (user_id, created_at desc);
-create index if not exists withdrawals_status_idx on public.withdrawals (status, created_at);
+create index withdrawals_user_idx on withdrawals (user_id, created_at desc);
+create index withdrawals_status_idx on withdrawals (status, created_at);
+-- Un seul retrait en cours par membre.
+create unique index withdrawals_one_open
+  on withdrawals (user_id) where status in ('requested', 'processing');
 
-drop trigger if exists update_withdrawals_updated_at on public.withdrawals;
 create trigger update_withdrawals_updated_at
-  before update on public.withdrawals
+  before update on withdrawals
   for each row execute function update_updated_at_column();
 
-alter table public.withdrawals enable row level security;
-
-create policy "withdrawals_select_own" on public.withdrawals
-  for select using (auth.uid() = user_id);
-create policy "withdrawals_admin_select" on public.withdrawals
-  for select using (public.is_admin());
-
-revoke insert, update, delete on public.withdrawals from anon, authenticated;
-
 -- ============================================================
--- 5. Parties de jeu (résultat tiré par le serveur)
+-- 7. Parties de jeu (résultat tiré par le serveur)
 -- ============================================================
-create table if not exists public.game_rounds (
+create table game_rounds (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
+  user_id text not null references "user" ("id") on delete cascade,
   game text not null check (game in ('spin', 'apple', 'aviator')),
   bet numeric(12, 2) not null check (bet > 0),
   status text not null default 'active' check (status in ('active', 'won', 'lost')),
@@ -140,29 +262,16 @@ create table if not exists public.game_rounds (
   settled_at timestamptz
 );
 
-create index if not exists game_rounds_user_idx on public.game_rounds (user_id, started_at desc);
-create index if not exists game_rounds_game_idx on public.game_rounds (game, started_at desc);
+create index game_rounds_user_idx on game_rounds (user_id, started_at desc);
+create index game_rounds_game_idx on game_rounds (game, started_at desc);
 -- Une seule partie en cours par jeu et par joueur.
-create unique index if not exists game_rounds_one_active
-  on public.game_rounds (user_id, game) where status = 'active';
-
-alter table public.game_rounds enable row level security;
-
-create policy "game_rounds_select_own" on public.game_rounds
-  for select using (auth.uid() = user_id);
-create policy "game_rounds_admin_select" on public.game_rounds
-  for select using (public.is_admin());
-
--- Le joueur ne lit jamais la graine ni l'état secret via l'API REST.
-revoke all on public.game_rounds from anon, authenticated;
-grant select (id, user_id, game, bet, status, multiplier, payout, public_state,
-              server_seed_hash, started_at, settled_at)
-  on public.game_rounds to authenticated;
+create unique index game_rounds_one_active
+  on game_rounds (user_id, game) where status = 'active';
 
 -- ============================================================
--- 6. Missions rémunérées
+-- 8. Missions rémunérées
 -- ============================================================
-create table if not exists public.missions (
+create table missions (
   id uuid primary key default gen_random_uuid(),
   title text not null check (char_length(btrim(title)) between 5 and 120),
   description text not null check (char_length(btrim(description)) between 10 and 2000),
@@ -170,53 +279,34 @@ create table if not exists public.missions (
   reward numeric(12, 2) not null check (reward > 0),
   max_completions integer check (max_completions is null or max_completions > 0),
   status text not null default 'draft' check (status in ('draft', 'open', 'closed')),
-  created_by uuid references auth.users(id) on delete set null,
+  created_by text references "user" ("id") on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-drop trigger if exists update_missions_updated_at on public.missions;
 create trigger update_missions_updated_at
-  before update on public.missions
+  before update on missions
   for each row execute function update_updated_at_column();
 
-create table if not exists public.mission_submissions (
+create table mission_submissions (
   id uuid primary key default gen_random_uuid(),
-  mission_id uuid not null references public.missions(id) on delete cascade,
-  user_id uuid not null references auth.users(id) on delete cascade,
+  mission_id uuid not null references missions (id) on delete cascade,
+  user_id text not null references "user" ("id") on delete cascade,
   proof text not null check (char_length(btrim(proof)) between 5 and 1000),
   status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
   admin_note text,
-  reviewed_by uuid references auth.users(id) on delete set null,
+  reviewed_by text references "user" ("id") on delete set null,
   created_at timestamptz not null default now(),
   reviewed_at timestamptz,
   unique (mission_id, user_id)
 );
 
-create index if not exists mission_submissions_status_idx
-  on public.mission_submissions (status, created_at);
-
-alter table public.missions enable row level security;
-alter table public.mission_submissions enable row level security;
-
-create policy "missions_select_open" on public.missions
-  for select to authenticated using (status = 'open');
-create policy "missions_admin_select" on public.missions
-  for select using (public.is_admin());
-
-create policy "mission_submissions_select_own" on public.mission_submissions
-  for select using (auth.uid() = user_id);
-create policy "mission_submissions_admin_select" on public.mission_submissions
-  for select using (public.is_admin());
-
-revoke insert, update, delete on public.missions from anon, authenticated;
-revoke insert, update, delete on public.mission_submissions from anon, authenticated;
+create index mission_submissions_status_idx on mission_submissions (status, created_at);
 
 -- ============================================================
--- 6b. Formations : catalogue et demandes d'inscription
---     (tables lues/écrites par src/app/formations/page.tsx)
+-- 9. Formations : catalogue et demandes d'inscription
 -- ============================================================
-create table if not exists public.courses (
+create table courses (
   slug text primary key check (slug ~ '^[a-z0-9-]{3,80}$'),
   title text not null check (char_length(btrim(title)) between 3 and 120),
   description text not null default '',
@@ -229,18 +319,9 @@ create table if not exists public.courses (
   created_at timestamptz not null default now()
 );
 
-alter table public.courses enable row level security;
-
-create policy "courses_select_published" on public.courses
-  for select to authenticated using (is_published);
-create policy "courses_admin_select" on public.courses
-  for select using (public.is_admin());
-
-revoke insert, update, delete on public.courses from anon, authenticated;
-
-create table if not exists public.course_registrations (
+create table course_registrations (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
+  user_id text not null references "user" ("id") on delete cascade,
   full_name text not null check (char_length(btrim(full_name)) between 2 and 80),
   phone text not null check (char_length(btrim(phone)) between 6 and 20),
   goal text check (goal is null or char_length(goal) <= 1000),
@@ -251,46 +332,166 @@ create table if not exists public.course_registrations (
   created_at timestamptz not null default now()
 );
 
-create index if not exists course_registrations_created_idx
-  on public.course_registrations (created_at desc);
-
-alter table public.course_registrations enable row level security;
-
-create policy "course_registrations_insert_own" on public.course_registrations
-  for insert to authenticated
-  with check (auth.uid() = user_id and status = 'new');
-create policy "course_registrations_select_own" on public.course_registrations
-  for select using (auth.uid() = user_id);
-create policy "course_registrations_admin_select" on public.course_registrations
-  for select using (public.is_admin());
-
-revoke update, delete on public.course_registrations from anon, authenticated;
+create index course_registrations_created_idx on course_registrations (created_at desc);
 
 -- ============================================================
--- 7. Messages de contact : lisibles par l'admin
--- ============================================================
-create policy "contact_messages_admin_select" on public.contact_messages
-  for select using (public.is_admin());
-
--- ============================================================
--- 8. Fonctions d'argent (service_role uniquement)
+-- 10. Fonctions métier
 -- ============================================================
 
--- 8.1 Paiement PayDunya confirmé : crédit wallet ou activation adhésion.
-create or replace function public.complete_payment(
+-- 10.1 Code de parrainage unique (IZZ + 6 caractères).
+create function generate_referral_code()
+returns text
+language plpgsql
+as $$
+declare
+  v_code text;
+begin
+  loop
+    v_code := 'IZZ' || upper(substr(md5(random()::text || clock_timestamp()::text), 1, 6));
+    exit when not exists (select 1 from profiles where referral_code = v_code);
+  end loop;
+  return v_code;
+end;
+$$;
+
+-- 10.2 Création du profil et du wallet juste après l'inscription Better Auth.
+create function create_member(
+  p_user_id text,
+  p_phone text,
+  p_country text,
+  p_referred_by text default null
+)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_referred_by text := upper(nullif(btrim(p_referred_by), ''));
+  v_code text;
+begin
+  if v_referred_by is not null
+     and not exists (select 1 from profiles where referral_code = v_referred_by) then
+    v_referred_by := null;
+  end if;
+
+  insert into profiles (id, phone, country, referral_code, referred_by)
+  values (p_user_id, p_phone, upper(p_country), generate_referral_code(), v_referred_by)
+  returning referral_code into v_code;
+
+  insert into wallets (user_id) values (p_user_id)
+  on conflict (user_id) do nothing;
+
+  return jsonb_build_object('success', true, 'referral_code', v_code);
+end;
+$$;
+
+-- 10.3 Crédit et débit du wallet : atomiques, montants positifs, idempotents.
+create function credit_wallet(
+  p_user_id text,
+  p_amount numeric,
+  p_type text,
+  p_description text default null,
+  p_reference_id text default null,
+  p_metadata jsonb default '{}'
+)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_new_balance numeric;
+  v_wallet_id uuid;
+begin
+  if p_amount is null or p_amount <= 0 then
+    return jsonb_build_object('success', false, 'error', 'Montant invalide');
+  end if;
+
+  if p_reference_id is not null and exists (
+    select 1 from transactions where reference_id = p_reference_id
+  ) then
+    return jsonb_build_object('success', true, 'duplicate', true);
+  end if;
+
+  insert into wallets (user_id) values (p_user_id)
+  on conflict (user_id) do nothing;
+
+  update wallets
+  set balance = balance + p_amount
+  where user_id = p_user_id
+  returning balance, id into v_new_balance, v_wallet_id;
+
+  -- L'index unique sur reference_id annule toute la fonction en cas de course.
+  insert into transactions (user_id, type, amount, balance_after, description, reference_id, metadata)
+  values (p_user_id, p_type, p_amount, v_new_balance, p_description, p_reference_id, p_metadata);
+
+  return jsonb_build_object('success', true, 'new_balance', v_new_balance, 'wallet_id', v_wallet_id);
+end;
+$$;
+
+create function debit_wallet(
+  p_user_id text,
+  p_amount numeric,
+  p_type text,
+  p_description text default null,
+  p_reference_id text default null,
+  p_metadata jsonb default '{}'
+)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_new_balance numeric;
+  v_wallet_id uuid;
+begin
+  if p_amount is null or p_amount <= 0 then
+    return jsonb_build_object('success', false, 'error', 'Montant invalide');
+  end if;
+
+  -- Vérification et débit en une seule instruction : pas de double débit concurrent.
+  update wallets
+  set balance = balance - p_amount
+  where user_id = p_user_id and balance >= p_amount
+  returning balance, id into v_new_balance, v_wallet_id;
+
+  if not found then
+    return jsonb_build_object('success', false, 'error', 'Solde insuffisant');
+  end if;
+
+  insert into transactions (user_id, type, amount, balance_after, description, reference_id, metadata)
+  values (p_user_id, p_type, -p_amount, v_new_balance, p_description, p_reference_id, p_metadata);
+
+  return jsonb_build_object('success', true, 'new_balance', v_new_balance, 'wallet_id', v_wallet_id);
+end;
+$$;
+
+-- 10.4 Notification.
+create function create_notification(
+  p_user_id text,
+  p_title text,
+  p_message text,
+  p_type text default 'info',
+  p_action_url text default null,
+  p_metadata jsonb default '{}'
+)
+returns uuid
+language sql
+as $$
+  insert into notifications (user_id, title, message, type, action_url, metadata)
+  values (p_user_id, p_title, p_message, p_type, p_action_url, p_metadata)
+  returning id;
+$$;
+
+-- 10.5 Paiement PayDunya confirmé : crédit wallet ou activation adhésion.
+create function complete_payment(
   p_token text,
   p_payload jsonb default '{}',
   p_referral_bonus numeric default 0
 )
 returns jsonb
 language plpgsql
-security definer
-set search_path = public
 as $$
 declare
   v_payment payments%rowtype;
   v_sponsor_code text;
-  v_sponsor_id uuid;
+  v_sponsor_id text;
 begin
   -- Verrou de ligne : deux IPN simultanées ne créditent qu'une fois.
   select * into v_payment from payments where provider_token = p_token for update;
@@ -325,11 +526,9 @@ begin
 end;
 $$;
 
-create or replace function public.fail_payment(p_token text, p_status text, p_payload jsonb default '{}')
+create function fail_payment(p_token text, p_status text, p_payload jsonb default '{}')
 returns void
 language sql
-security definer
-set search_path = public
 as $$
   update payments
   set status = p_status, provider_payload = p_payload
@@ -337,21 +536,19 @@ as $$
     and p_status in ('failed', 'cancelled');
 $$;
 
--- 8.2 Adhésion payée avec le solde du wallet.
-create or replace function public.pay_membership_from_wallet(
-  p_user_id uuid,
+-- 10.6 Adhésion payée avec le solde du wallet.
+create function pay_membership_from_wallet(
+  p_user_id text,
   p_fee numeric,
   p_referral_bonus numeric
 )
 returns jsonb
 language plpgsql
-security definer
-set search_path = public
 as $$
 declare
   v_profile profiles%rowtype;
   v_debit jsonb;
-  v_sponsor_id uuid;
+  v_sponsor_id text;
 begin
   select * into v_profile from profiles where id = p_user_id for update;
   if not found then
@@ -379,9 +576,9 @@ begin
 end;
 $$;
 
--- 8.3 Demande de retrait : montant + frais bloqués immédiatement.
-create or replace function public.request_withdrawal(
-  p_user_id uuid,
+-- 10.7 Demande de retrait : montant + frais bloqués immédiatement.
+create function request_withdrawal(
+  p_user_id text,
   p_amount numeric,
   p_fee numeric,
   p_phone text,
@@ -389,8 +586,6 @@ create or replace function public.request_withdrawal(
 )
 returns jsonb
 language plpgsql
-security definer
-set search_path = public
 as $$
 declare
   v_id uuid := gen_random_uuid();
@@ -418,17 +613,15 @@ begin
 end;
 $$;
 
--- 8.4 Retrait refusé ou échoué : remboursement intégral (une seule fois).
-create or replace function public.refund_withdrawal(
+-- 10.8 Retrait refusé ou échoué : remboursement intégral (une seule fois).
+create function refund_withdrawal(
   p_id uuid,
   p_status text,
   p_note text,
-  p_admin uuid default null
+  p_admin text default null
 )
 returns jsonb
 language plpgsql
-security definer
-set search_path = public
 as $$
 declare
   v_wd withdrawals%rowtype;
@@ -456,9 +649,9 @@ begin
 end;
 $$;
 
--- 8.5 Jeu instantané (roue) : mise, tirage et gain dans une seule transaction.
-create or replace function public.play_instant_round(
-  p_user_id uuid,
+-- 10.9 Jeu instantané (roue) : mise, tirage et gain dans une seule transaction.
+create function play_instant_round(
+  p_user_id text,
   p_game text,
   p_bet numeric,
   p_multiplier numeric,
@@ -468,8 +661,6 @@ create or replace function public.play_instant_round(
 )
 returns jsonb
 language plpgsql
-security definer
-set search_path = public
 as $$
 declare
   v_round_id uuid := gen_random_uuid();
@@ -500,9 +691,9 @@ begin
 end;
 $$;
 
--- 8.6 Jeu en plusieurs étapes : ouverture de partie (mise débitée).
-create or replace function public.open_round(
-  p_user_id uuid,
+-- 10.10 Jeu en plusieurs étapes : ouverture de partie (mise débitée).
+create function open_round(
+  p_user_id text,
   p_game text,
   p_bet numeric,
   p_public_state jsonb,
@@ -512,8 +703,6 @@ create or replace function public.open_round(
 )
 returns jsonb
 language plpgsql
-security definer
-set search_path = public
 as $$
 declare
   v_round_id uuid := gen_random_uuid();
@@ -539,8 +728,8 @@ begin
 end;
 $$;
 
--- 8.7 Clôture d'une partie : gagnée (gain crédité) ou perdue. Une seule fois.
-create or replace function public.settle_round(
+-- 10.11 Clôture d'une partie : gagnée (gain crédité) ou perdue. Une seule fois.
+create function settle_round(
   p_round_id uuid,
   p_status text,
   p_multiplier numeric,
@@ -548,8 +737,6 @@ create or replace function public.settle_round(
 )
 returns jsonb
 language plpgsql
-security definer
-set search_path = public
 as $$
 declare
   v_round game_rounds%rowtype;
@@ -590,16 +777,14 @@ begin
 end;
 $$;
 
--- 8.8 Avancée d'une partie sans clôture (case révélée) : verrou optimiste.
-create or replace function public.advance_round(
+-- 10.12 Avancée d'une partie sans clôture (case révélée) : verrou optimiste.
+create function advance_round(
   p_round_id uuid,
   p_expected_version integer,
   p_public_state jsonb
 )
 returns boolean
 language sql
-security definer
-set search_path = public
 as $$
   with updated as (
     update game_rounds
@@ -610,17 +795,15 @@ as $$
   select exists (select 1 from updated);
 $$;
 
--- 8.9 Mission validée : récompense créditée une seule fois.
-create or replace function public.review_mission_submission(
+-- 10.13 Mission validée : récompense créditée une seule fois.
+create function review_mission_submission(
   p_submission_id uuid,
   p_approve boolean,
   p_note text,
-  p_admin uuid
+  p_admin text
 )
 returns jsonb
 language plpgsql
-security definer
-set search_path = public
 as $$
 declare
   v_sub mission_submissions%rowtype;
@@ -651,17 +834,15 @@ begin
 end;
 $$;
 
--- 8.10 Ajustement manuel de solde par l'admin (trace obligatoire).
-create or replace function public.admin_adjust_balance(
-  p_user_id uuid,
+-- 10.14 Ajustement manuel de solde par l'admin (trace obligatoire).
+create function admin_adjust_balance(
+  p_user_id text,
   p_amount numeric,
   p_reason text,
-  p_admin uuid
+  p_admin text
 )
 returns jsonb
 language plpgsql
-security definer
-set search_path = public
 as $$
 declare
   v_ref text := 'adjust:' || gen_random_uuid();
@@ -677,16 +858,11 @@ begin
 end;
 $$;
 
--- ============================================================
--- 9. Statistiques admin (droits de l'appelant : la RLS is_admin()
---    donne tout à l'admin, un membre ne verrait que ses propres lignes)
--- ============================================================
-create or replace function public.admin_stats(p_since timestamptz default now() - interval '30 days')
+-- 10.15 Statistiques du tableau de bord admin.
+create function admin_stats(p_since timestamptz default now() - interval '30 days')
 returns jsonb
 language sql
 stable
-security invoker
-set search_path = public
 as $$
   select jsonb_build_object(
     'users', (select count(*) from profiles),
@@ -712,57 +888,26 @@ as $$
   );
 $$;
 
-revoke execute on function public.admin_stats(timestamptz) from public, anon;
-grant execute on function public.admin_stats(timestamptz) to authenticated, service_role;
+-- ============================================================
+-- 11. Limitation de débit (connexion, inscription, mot de passe oublié)
+-- ============================================================
+create table rate_limits (
+  key text primary key,
+  hits integer not null,
+  reset_at timestamptz not null
+);
 
-do $$
-declare
-  fn text;
-begin
-  foreach fn in array array[
-    'public.complete_payment(text, jsonb, numeric)',
-    'public.fail_payment(text, text, jsonb)',
-    'public.pay_membership_from_wallet(uuid, numeric, numeric)',
-    'public.request_withdrawal(uuid, numeric, numeric, text, text)',
-    'public.refund_withdrawal(uuid, text, text, uuid)',
-    'public.play_instant_round(uuid, text, numeric, numeric, jsonb, text, text)',
-    'public.open_round(uuid, text, numeric, jsonb, jsonb, text, text)',
-    'public.settle_round(uuid, text, numeric, jsonb)',
-    'public.advance_round(uuid, integer, jsonb)',
-    'public.review_mission_submission(uuid, boolean, text, uuid)',
-    'public.admin_adjust_balance(uuid, numeric, text, uuid)'
-  ]
-  loop
-    execute format('revoke execute on function %s from public, anon, authenticated', fn);
-    execute format('grant execute on function %s to service_role', fn);
-  end loop;
-end;
+-- Compte une tentative ; renvoie false si la limite de la fenêtre est dépassée.
+create function hit_rate_limit(p_key text, p_max integer, p_window_seconds integer)
+returns boolean
+language sql
+as $$
+  insert into rate_limits as r (key, hits, reset_at)
+  values (p_key, 1, now() + make_interval(secs => p_window_seconds))
+  on conflict (key) do update
+    set hits = case when r.reset_at < now() then 1 else r.hits + 1 end,
+        reset_at = case when r.reset_at < now()
+                        then now() + make_interval(secs => p_window_seconds)
+                        else r.reset_at end
+  returning hits <= p_max;
 $$;
-
-commit;
-
--- ============================================================
--- ROLLBACK (à exécuter manuellement si nécessaire)
--- ============================================================
--- begin;
---   drop function if exists public.admin_stats(timestamptz);
---   drop function if exists public.admin_adjust_balance(uuid, numeric, text, uuid);
---   drop function if exists public.review_mission_submission(uuid, boolean, text, uuid);
---   drop function if exists public.advance_round(uuid, integer, jsonb);
---   drop function if exists public.settle_round(uuid, text, numeric, jsonb);
---   drop function if exists public.open_round(uuid, text, numeric, jsonb, jsonb, text, text);
---   drop function if exists public.play_instant_round(uuid, text, numeric, numeric, jsonb, text, text);
---   drop function if exists public.refund_withdrawal(uuid, text, text, uuid);
---   drop function if exists public.request_withdrawal(uuid, numeric, numeric, text, text);
---   drop function if exists public.pay_membership_from_wallet(uuid, numeric, numeric);
---   drop function if exists public.fail_payment(text, text, jsonb);
---   drop function if exists public.complete_payment(text, jsonb, numeric);
---   drop policy if exists "contact_messages_admin_select" on public.contact_messages;
---   drop table if exists public.course_registrations, public.courses,
---     public.mission_submissions, public.missions, public.game_rounds,
---     public.withdrawals, public.payments, public.app_settings;
---   alter table public.profiles drop column if exists is_banned, drop column if exists games_accepted_at;
---   alter table public.transactions drop constraint if exists transactions_type_check;
---   alter table public.transactions add constraint transactions_type_check check (type in
---     ('deposit','withdraw','game_bet','game_win','mission_reward','referral_bonus','purchase'));
--- commit;

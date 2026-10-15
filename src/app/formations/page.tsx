@@ -6,7 +6,6 @@ import CourseImage from '@/components/CourseImage';
 import { useSession } from '@/hooks/useSession';
 import { useRouter } from 'next/navigation';
 import { formatFcfa, ADHESION_FEE } from '@/lib/config';
-import { createBrowserClient } from '@/lib/supabase/client';
 
 type Course = {
   slug: string;
@@ -42,10 +41,17 @@ export default function FormationsPage() {
 
     async function loadCourses() {
       try {
-        const supabase = createBrowserClient();
-        const { data, error } = await supabase.from('courses').select('*');
-        if (error || cancelled || !Array.isArray(data)) return;
-        const rows = data as Array<Record<string, unknown>>;
+        // Catalogue réservé aux comptes connectés : un visiteur (401) garde
+        // les formations hardcodées ci-dessous.
+        const response = await fetch('/api/courses', { cache: 'no-store' });
+        if (!response.ok || cancelled) return;
+        const payload: unknown = await response.json();
+        const list =
+          typeof payload === 'object' && payload !== null
+            ? (payload as { data?: { courses?: unknown } }).data?.courses
+            : undefined;
+        if (cancelled || !Array.isArray(list)) return;
+        const rows = list as Array<Record<string, unknown>>;
         setCourses(
           rows
             .filter((row) => typeof row.slug === 'string' && typeof row.title === 'string')
@@ -53,15 +59,15 @@ export default function FormationsPage() {
               slug: String(row.slug),
               title: String(row.title),
               description: typeof row.description === 'string' ? row.description : '',
-              duration_weeks: typeof row.duration_weeks === 'number' ? row.duration_weeks : 1,
-              price_fcfa: typeof row.price_fcfa === 'number' ? row.price_fcfa : 0,
+              duration_weeks: typeof row.durationWeeks === 'number' ? row.durationWeeks : 1,
+              price_fcfa: typeof row.priceFcfa === 'number' ? row.priceFcfa : 0,
               level: typeof row.level === 'string' ? row.level : 'debutant',
               category: typeof row.category === 'string' ? row.category : '',
-              image_url: typeof row.image_url === 'string' ? row.image_url : null,
+              image_url: typeof row.imageUrl === 'string' ? row.imageUrl : null,
             })),
         );
       } catch {
-        // Table absente ou réseau indisponible : on garde les formations hardcodées.
+        // Réseau indisponible : on garde les formations hardcodées.
       }
     }
 
@@ -319,18 +325,33 @@ export default function FormationsPage() {
     setFormMessage('');
 
     try {
-      const supabase = createBrowserClient();
-      const { error } = await supabase.from('course_registrations').insert({
-        user_id: user?.id ?? null,
-        full_name: formData.nomComplet,
-        phone: formData.contact,
-        goal: formData.objectif,
-        level: formData.niveau,
-        formation: formData.formation,
-        payment_method: formData.paiement,
+      const response = await fetch('/api/courses/registrations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: formData.nomComplet,
+          phone: formData.contact,
+          goal: formData.objectif,
+          level: formData.niveau,
+          formation: formData.formation,
+          paymentMethod: formData.paiement,
+        }),
       });
 
-      if (error) throw error;
+      if (!response.ok) {
+        const payload: unknown = await response.json().catch(() => null);
+        const message =
+          typeof payload === 'object' && payload !== null
+            ? (payload as { error?: { message?: unknown } }).error?.message
+            : undefined;
+        setFormStatus('error');
+        setFormMessage(
+          typeof message === 'string' && message
+            ? message
+            : "Erreur lors de l'envoi. Réessayez ou contactez-nous sur WhatsApp.",
+        );
+        return;
+      }
 
       setFormStatus('success');
       setFormMessage(

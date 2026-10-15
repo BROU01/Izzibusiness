@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     const parsed = roundSchema.safeParse(await readJson(request));
     if (!parsed.success) return apiError(ERROR_CODES.INVALID_PAYLOAD, 'Partie invalide.', 400);
 
-    const round = await loadRound(player.admin, player.userId, parsed.data.roundId, 'apple');
+    const round = await loadRound(player.userId, parsed.data.roundId, 'apple');
     if (!round) return apiError(ERROR_CODES.NOT_FOUND, 'Partie introuvable.', 404);
 
     const level = Number(round.public_state.level ?? 0);
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     }
 
     const multiplier = appleMultiplier(level);
-    const result = await settle(player.admin, round.id, 'won', multiplier, {
+    const result = await settle(round.id, 'won', multiplier, {
       ...round.public_state,
       rotten: round.secret_state.rotten,
     });

@@ -8,37 +8,64 @@ import {
   MAX_BET,
   MIN_BET,
 } from '@/lib/config';
-import { createServiceClient } from '@/lib/supabase/server';
+import { query, queryOne } from '@/lib/db';
 import { getEnabledGames } from '@/lib/games/service';
 import { APPLE_MULTIPLIERS, SPIN_SEGMENTS } from '@/lib/games/rules';
+
+interface ActiveRoundRow {
+  id: string;
+  game: string;
+  bet: number;
+  public_state: Record<string, unknown>;
+  server_seed_hash: string;
+  started_at: Date;
+}
+
+interface RecentRoundRow {
+  id: string;
+  game: string;
+  bet: number;
+  status: string;
+  multiplier: number;
+  payout: number;
+  started_at: Date;
+}
 
 /** État des jeux pour le joueur : règles, jeux ouverts, parties en cours, solde. */
 export async function GET() {
   try {
     const auth = await requireProfile();
     if (auth.response) return auth.response;
+    const userId = auth.user.id;
 
+    // Jamais de secret_state ni de server_seed pour une partie en cours.
     const [enabled, wallet, active, recent] = await Promise.all([
-      getEnabledGames(createServiceClient()),
-      auth.supabase.from('wallets').select('balance').eq('user_id', auth.user.id).maybeSingle(),
-      auth.supabase
-        .from('game_rounds')
-        .select('id, game, bet, public_state, server_seed_hash, started_at')
-        .eq('user_id', auth.user.id)
-        .eq('status', 'active'),
-      auth.supabase
-        .from('game_rounds')
-        .select('id, game, bet, status, multiplier, payout, started_at')
-        .eq('user_id', auth.user.id)
-        .neq('status', 'active')
-        .order('started_at', { ascending: false })
-        .limit(10),
+      getEnabledGames(),
+      queryOne<{ balance: number }>(
+        'select balance::float8 as balance from wallets where user_id = $1',
+        [userId],
+      ),
+      query<ActiveRoundRow>(
+        `select id, game, bet::float8 as bet, public_state, server_seed_hash, started_at
+           from game_rounds
+          where user_id = $1 and status = 'active'`,
+        [userId],
+      ),
+      query<RecentRoundRow>(
+        `select id, game, bet::float8 as bet, status, multiplier::float8 as multiplier,
+                payout::float8 as payout, started_at
+           from game_rounds
+          where user_id = $1 and status <> 'active'
+          order by started_at desc
+          limit 10`,
+        [userId],
+      ),
     ]);
 
     return apiData({
       isMember: auth.profile.isMember,
       accepted: Boolean(auth.profile.gamesAcceptedAt),
-      balance: Number(wallet.data?.balance ?? 0),
+      balance: Number(wallet?.balance ?? 0),
       enabled,
       rules: {
         minBet: MIN_BET,
@@ -51,22 +78,22 @@ export async function GET() {
         aviatorGrowthRate: AVIATOR_GROWTH_RATE,
         aviatorMaxMultiplier: AVIATOR_MAX_MULTIPLIER,
       },
-      active: (active.data ?? []).map((r) => ({
+      active: active.map((r) => ({
         id: r.id,
         game: r.game,
         bet: Number(r.bet),
         state: r.public_state,
         serverSeedHash: r.server_seed_hash,
-        startedAt: r.started_at,
+        startedAt: r.started_at.toISOString(),
       })),
-      recent: (recent.data ?? []).map((r) => ({
+      recent: recent.map((r) => ({
         id: r.id,
         game: r.game,
         bet: Number(r.bet),
         status: r.status,
         multiplier: Number(r.multiplier),
         payout: Number(r.payout),
-        startedAt: r.started_at,
+        startedAt: r.started_at.toISOString(),
       })),
     });
   } catch (error) {

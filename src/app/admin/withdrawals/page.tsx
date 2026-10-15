@@ -3,7 +3,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { LoadError, formatDate } from '@/components/admin/DataTable';
 import ActionButton from '@/components/admin/ActionButton';
 import InputAction from '@/components/admin/InputAction';
-import { createClient } from '@/lib/supabase/server';
+import { load, requireAdminPage } from '../_lib/load';
 import { WITHDRAW_OPERATORS, formatFcfa } from '@/lib/config';
 import { WITHDRAWAL_STATUS } from '@/lib/labels';
 import { isPaydunyaConfigured } from '@/lib/paydunya';
@@ -18,19 +18,40 @@ const OPERATOR_LABEL: Record<string, string> = Object.fromEntries(
 
 /** Retraits : file d'attente d'abord, puis historique récent. */
 export default async function AdminWithdrawalsPage() {
-  const supabase = await createClient();
+  await requireAdminPage();
   const [pending, history] = await Promise.all([
-    supabase
-      .from('withdrawals')
-      .select('id, user_id, amount, fee, phone, withdraw_mode, status, admin_note, created_at')
-      .in('status', ['requested', 'processing'])
-      .order('created_at', { ascending: true }),
-    supabase
-      .from('withdrawals')
-      .select('id, user_id, amount, phone, withdraw_mode, status, admin_note, updated_at')
-      .in('status', ['paid', 'rejected', 'failed'])
-      .order('updated_at', { ascending: false })
-      .limit(50),
+    load<{
+      id: string;
+      user_id: string;
+      amount: string;
+      fee: string;
+      phone: string;
+      withdraw_mode: string;
+      status: string;
+      admin_note: string | null;
+      created_at: Date;
+    }>(
+      `select id, user_id, amount, fee, phone, withdraw_mode, status, admin_note, created_at
+         from withdrawals
+        where status in ('requested', 'processing')
+        order by created_at asc`,
+    ),
+    load<{
+      id: string;
+      user_id: string;
+      amount: string;
+      phone: string;
+      withdraw_mode: string;
+      status: string;
+      admin_note: string | null;
+      updated_at: Date;
+    }>(
+      `select id, user_id, amount, phone, withdraw_mode, status, admin_note, updated_at
+         from withdrawals
+        where status in ('paid', 'rejected', 'failed')
+        order by updated_at desc
+        limit 50`,
+    ),
   ]);
   const paydunya = isPaydunyaConfigured();
 

@@ -12,13 +12,11 @@ export default function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectPath = safeRedirectPath(searchParams.get('redirect'));
-  const linkExpired = searchParams.get('error') === 'link_expired';
+  const passwordReset = searchParams.get('reset') === '1';
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(
-    linkExpired ? 'Ce lien a expiré ou a déjà été utilisé. Connecte-toi directement.' : null,
-  );
+  const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -68,6 +66,9 @@ export default function LoginForm() {
       }
     >
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
+        {passwordReset && !error && (
+          <FormAlert tone="success">Mot de passe modifié. Connecte-toi avec le nouveau.</FormAlert>
+        )}
         {error && <FormAlert tone="error">{error}</FormAlert>}
 
         <FormField

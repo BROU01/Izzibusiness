@@ -1,4 +1,4 @@
-import { createServiceClient } from '@/lib/supabase/server';
+import { callFunction, queryOne } from '@/lib/db';
 import { confirmInvoice } from '@/lib/paydunya';
 import { REFERRAL_BONUS, formatFcfa } from '@/lib/config';
 import { createNotification } from '@/lib/notifications';
@@ -11,13 +11,13 @@ export type SyncOutcome = 'completed' | 'pending' | 'failed' | 'cancelled' | 'un
  * verrouille la ligne et ignore un paiement déjà complété).
  */
 export async function syncPaymentFromProvider(token: string): Promise<SyncOutcome> {
-  const admin = createServiceClient();
-
-  const { data: payment } = await admin
-    .from('payments')
-    .select('id, user_id, kind, amount, status')
-    .eq('provider_token', token)
-    .maybeSingle();
+  const payment = await queryOne<{
+    id: string;
+    user_id: string;
+    kind: 'deposit' | 'membership';
+    amount: string;
+    status: string;
+  }>('select id, user_id, kind, amount, status from payments where provider_token = $1', [token]);
   if (!payment) return 'unknown';
   if (payment.status === 'completed') return 'completed';
 
@@ -26,20 +26,18 @@ export async function syncPaymentFromProvider(token: string): Promise<SyncOutcom
   if (invoice.status === 'completed') {
     // Le montant payé doit correspondre exactement à la facture créée.
     if (Math.round(invoice.totalAmount) !== Math.round(Number(payment.amount))) {
-      await admin.rpc('fail_payment', {
-        p_token: token,
-        p_status: 'failed',
-        p_payload: { reason: 'amount_mismatch', provider: invoice.raw },
-      });
+      await callFunction('fail_payment', [
+        token,
+        'failed',
+        JSON.stringify({ reason: 'amount_mismatch', provider: invoice.raw }),
+      ]);
       return 'failed';
     }
 
-    const { data } = await admin.rpc('complete_payment', {
-      p_token: token,
-      p_payload: invoice.raw,
-      p_referral_bonus: REFERRAL_BONUS,
-    });
-    const result = data as { success?: boolean; duplicate?: boolean } | null;
+    const result = await callFunction<{ success?: boolean; duplicate?: boolean } | null>(
+      'complete_payment',
+      [token, JSON.stringify(invoice.raw), REFERRAL_BONUS],
+    );
     if (result?.success && !result.duplicate) {
       await createNotification(
         payment.kind === 'deposit'
@@ -63,11 +61,7 @@ export async function syncPaymentFromProvider(token: string): Promise<SyncOutcom
   }
 
   if (invoice.status === 'cancelled' || invoice.status === 'failed') {
-    await admin.rpc('fail_payment', {
-      p_token: token,
-      p_status: invoice.status,
-      p_payload: invoice.raw,
-    });
+    await callFunction('fail_payment', [token, invoice.status, JSON.stringify(invoice.raw)]);
     return invoice.status;
   }
 

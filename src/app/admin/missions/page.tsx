@@ -3,7 +3,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { LoadError, formatDate } from '@/components/admin/DataTable';
 import ActionButton from '@/components/admin/ActionButton';
 import InputAction from '@/components/admin/InputAction';
-import { createClient } from '@/lib/supabase/server';
+import { load, requireAdminPage } from '../_lib/load';
 import { formatFcfa } from '@/lib/config';
 import { MISSION_STATUS } from '@/lib/labels';
 import MissionForm from './MissionForm';
@@ -12,18 +12,37 @@ export const dynamic = 'force-dynamic';
 
 /** Missions : preuves à vérifier, création, liste et publication. */
 export default async function AdminMissionsPage() {
-  const supabase = await createClient();
+  await requireAdminPage();
   const [missions, pending] = await Promise.all([
-    supabase
-      .from('missions')
-      .select('id, title, reward, status, max_completions, created_at')
-      .order('created_at', { ascending: false }),
-    supabase
-      .from('mission_submissions')
-      .select('id, mission_id, user_id, proof, created_at, missions(title, reward)')
-      .eq('status', 'pending')
-      .order('created_at', { ascending: true })
-      .limit(100),
+    load<{
+      id: string;
+      title: string;
+      reward: string;
+      status: string;
+      max_completions: number | null;
+      created_at: Date;
+    }>(
+      `select id, title, reward, status, max_completions, created_at
+         from missions
+        order by created_at desc`,
+    ),
+    load<{
+      id: string;
+      mission_id: string;
+      user_id: string;
+      proof: string;
+      created_at: Date;
+      mission_title: string | null;
+      mission_reward: string | null;
+    }>(
+      `select s.id, s.mission_id, s.user_id, s.proof, s.created_at,
+              m.title as mission_title, m.reward as mission_reward
+         from mission_submissions s
+         left join missions m on m.id = s.mission_id
+        where s.status = 'pending'
+        order by s.created_at asc
+        limit 100`,
+    ),
   ]);
 
   return (
@@ -53,10 +72,10 @@ export default async function AdminMissionsPage() {
             ]}
           >
             {(pending.data ?? []).map((s) => {
-              const mission = (Array.isArray(s.missions) ? s.missions[0] : s.missions) as {
-                title: string;
-                reward: number;
-              } | null;
+              const mission =
+                s.mission_title === null
+                  ? null
+                  : { title: s.mission_title, reward: s.mission_reward };
               return (
                 <tr key={s.id}>
                   <td className="whitespace-nowrap">{formatDate(s.created_at)}</td>

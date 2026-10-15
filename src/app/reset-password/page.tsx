@@ -6,7 +6,16 @@ export const metadata: Metadata = {
   robots: { index: false },
 };
 
-// Accès protégé par le proxy (src/proxy.ts) : nécessite la session ouverte par le lien e-mail.
-export default function ResetPasswordPage() {
-  return <ResetPasswordForm />;
+/**
+ * Page publique ouverte depuis le lien reçu par e-mail : Better Auth y
+ * renvoie avec ?token=… (ou ?error=INVALID_TOKEN si le lien a expiré).
+ */
+export default async function ResetPasswordPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string | string[]; error?: string | string[] }>;
+}) {
+  const params = await searchParams;
+  const token = typeof params.token === 'string' && !params.error ? params.token : null;
+  return <ResetPasswordForm token={token} />;
 }

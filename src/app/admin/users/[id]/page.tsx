@@ -4,7 +4,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { formatDate } from '@/components/admin/DataTable';
 import ActionButton from '@/components/admin/ActionButton';
 import InputAction from '@/components/admin/InputAction';
-import { createClient } from '@/lib/supabase/server';
+import { load, requireAdminPage } from '../../_lib/load';
 import { findCountry } from '@/lib/auth/countries';
 import { formatFcfa } from '@/lib/config';
 import { GAME_LABELS, ROUND_STATUS, WITHDRAWAL_STATUS } from '@/lib/labels';
@@ -13,47 +13,79 @@ export const dynamic = 'force-dynamic';
 
 /** Fiche d'un compte : profil, solde, opérations, parties, retraits, actions admin. */
 export default async function AdminUserPage({ params }: { params: Promise<{ id: string }> }) {
+  const me = await requireAdminPage();
   const { id } = await params;
-  if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
-
-  const supabase = await createClient();
-  const {
-    data: { user: me },
-  } = await supabase.auth.getUser();
+  // Identifiant Better Auth (chaîne aléatoire, pas un UUID).
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) notFound();
 
   const [profileRes, walletRes, txRes, roundsRes, wdRes] = await Promise.all([
-    supabase
-      .from('profiles')
-      .select(
-        'id, username, email, phone, country, role, is_member, is_banned, referral_code, referred_by, games_accepted_at, created_at',
-      )
-      .eq('id', id)
-      .maybeSingle(),
-    supabase.from('wallets').select('balance').eq('user_id', id).maybeSingle(),
-    supabase
-      .from('transactions')
-      .select('id, type, amount, balance_after, description, created_at')
-      .eq('user_id', id)
-      .order('created_at', { ascending: false })
-      .limit(30),
-    supabase
-      .from('game_rounds')
-      .select('id, game, bet, status, multiplier, payout, started_at')
-      .eq('user_id', id)
-      .order('started_at', { ascending: false })
-      .limit(10),
-    supabase
-      .from('withdrawals')
-      .select('id, amount, status, created_at')
-      .eq('user_id', id)
-      .order('created_at', { ascending: false })
-      .limit(10),
+    load<{
+      id: string;
+      username: string | null;
+      email: string | null;
+      phone: string;
+      country: string | null;
+      role: string;
+      is_member: boolean;
+      is_banned: boolean;
+      referral_code: string | null;
+      referred_by: string | null;
+      games_accepted_at: Date | null;
+      created_at: Date;
+    }>(
+      `select p.id, u.username, u.email, p.phone, p.country, p.role, p.is_member, p.is_banned,
+              p.referral_code, p.referred_by, p.games_accepted_at, p.created_at
+         from profiles p
+         join "user" u on u.id = p.id
+        where p.id = $1`,
+      [id],
+    ),
+    load<{ balance: string }>('select balance from wallets where user_id = $1', [id]),
+    load<{
+      id: string;
+      type: string;
+      amount: string;
+      balance_after: string;
+      description: string | null;
+      created_at: Date;
+    }>(
+      `select id, type, amount, balance_after, description, created_at
+         from transactions
+        where user_id = $1
+        order by created_at desc
+        limit 30`,
+      [id],
+    ),
+    load<{
+      id: string;
+      game: string;
+      bet: string;
+      status: string;
+      multiplier: string;
+      payout: string;
+      started_at: Date;
+    }>(
+      `select id, game, bet, status, multiplier, payout, started_at
+         from game_rounds
+        where user_id = $1
+        order by started_at desc
+        limit 10`,
+      [id],
+    ),
+    load<{ id: string; amount: string; status: string; created_at: Date }>(
+      `select id, amount, status, created_at
+         from withdrawals
+        where user_id = $1
+        order by created_at desc
+        limit 10`,
+      [id],
+    ),
   ]);
 
-  const p = profileRes.data;
+  const p = profileRes.data[0];
   if (!p) notFound();
   const url = `/api/admin/users/${id}`;
-  const isSelf = me?.id === id;
+  const isSelf = me.id === id;
 
   return (
     <div>
@@ -103,7 +135,7 @@ export default async function AdminUserPage({ params }: { params: Promise<{ id: 
         <section className="card">
           <h2 className="text-xl">Solde</h2>
           <p className="mt-2 font-display text-4xl font-black">
-            {formatFcfa(Number(walletRes.data?.balance ?? 0))}
+            {formatFcfa(Number(walletRes.data[0]?.balance ?? 0))}
           </p>
           <div className="mt-6 flex flex-wrap items-start gap-2">
             <ActionButton

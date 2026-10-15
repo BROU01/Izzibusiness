@@ -2,6 +2,18 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { ERROR_CODES } from '@/lib/error-codes';
 import { apiError, internalError, requireUser } from '@/lib/api-response';
+import { query, queryOne } from '@/lib/db';
+
+interface TransactionRow {
+  id: string;
+  type: string;
+  amount: number;
+  balance_after: number;
+  description: string | null;
+  reference_id: string | null;
+  status: string;
+  created_at: Date;
+}
 
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -32,23 +44,29 @@ export async function GET(request: Request) {
     }
     const { limit, offset, type } = parsed.data;
 
-    let query = auth.supabase
-      .from('transactions')
-      .select('id, type, amount, balance_after, description, reference_id, status, created_at', {
-        count: 'exact',
-      })
-      .eq('user_id', auth.user.id)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (type) query = query.eq('type', type);
-
-    const { data, error, count } = await query;
-    if (error) return internalError('transactions GET', error);
+    // Filtre sur le type optionnel : $2 null = tous les types.
+    const filters = [auth.user.id, type ?? null];
+    const [rows, totalRow] = await Promise.all([
+      query<TransactionRow>(
+        `select id, type, amount::float8 as amount, balance_after::float8 as balance_after,
+                description, reference_id, status, created_at
+           from transactions
+          where user_id = $1 and ($2::text is null or type = $2)
+          order by created_at desc
+          limit $3 offset $4`,
+        [...filters, limit, offset],
+      ),
+      queryOne<{ total: number }>(
+        `select count(*)::int as total
+           from transactions
+          where user_id = $1 and ($2::text is null or type = $2)`,
+        filters,
+      ),
+    ]);
 
     return NextResponse.json({
       success: true,
-      transactions: (data ?? []).map((tx) => ({
+      transactions: rows.map((tx) => ({
         id: tx.id,
         type: tx.type,
         amount: Number(tx.amount),
@@ -56,9 +74,9 @@ export async function GET(request: Request) {
         description: tx.description,
         referenceId: tx.reference_id,
         status: tx.status,
-        createdAt: tx.created_at,
+        createdAt: tx.created_at.toISOString(),
       })),
-      total: count ?? 0,
+      total: totalRow?.total ?? 0,
     });
   } catch (error) {
     return internalError('transactions GET', error);

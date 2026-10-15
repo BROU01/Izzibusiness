@@ -3,7 +3,7 @@ import type { NextResponse } from 'next/server';
 import { ERROR_CODES } from '@/lib/error-codes';
 import { apiError, asRpcResult, requireProfile, type RpcResult } from '@/lib/api-response';
 import { APPLE_COLUMNS, APPLE_LEVELS, MAX_BET, MIN_BET, formatFcfa } from '@/lib/config';
-import { createServiceClient } from '@/lib/supabase/server';
+import { callFunction, queryOne } from '@/lib/db';
 import { newServerSeed } from './fair';
 import {
   aviatorCrashPoint,
@@ -32,15 +32,11 @@ export const pickSchema = roundSchema.extend({
     .max(APPLE_COLUMNS - 1),
 });
 
-type Admin = ReturnType<typeof createServiceClient>;
-
-export async function getEnabledGames(admin: Admin): Promise<Record<GameId, boolean>> {
-  const { data } = await admin
-    .from('app_settings')
-    .select('value')
-    .eq('key', 'games_enabled')
-    .maybeSingle();
-  const value = (data?.value ?? {}) as Partial<Record<GameId, boolean>>;
+export async function getEnabledGames(): Promise<Record<GameId, boolean>> {
+  const row = await queryOne<{ value: Partial<Record<GameId, boolean>> }>(
+    "select value from app_settings where key = 'games_enabled'",
+  );
+  const value = row?.value ?? {};
   return {
     spin: value.spin === true,
     apple: value.apple === true,
@@ -54,7 +50,7 @@ export async function getEnabledGames(admin: Admin): Promise<Record<GameId, bool
  */
 export async function requirePlayer(
   game: GameId,
-): Promise<{ userId: string; admin: Admin; response?: never } | { response: NextResponse }> {
+): Promise<{ userId: string; response?: never } | { userId?: never; response: NextResponse }> {
   const auth = await requireProfile({ member: true });
   if (auth.response) return { response: auth.response };
   if (!auth.profile.gamesAcceptedAt) {
@@ -66,8 +62,7 @@ export async function requirePlayer(
       ),
     };
   }
-  const admin = createServiceClient();
-  const enabled = await getEnabledGames(admin);
+  const enabled = await getEnabledGames();
   if (!enabled[game]) {
     return {
       response: apiError(
@@ -77,7 +72,7 @@ export async function requirePlayer(
       ),
     };
   }
-  return { userId: auth.user.id, admin };
+  return { userId: auth.user.id };
 }
 
 export function rpcFailure(result: RpcResult): NextResponse {
@@ -91,22 +86,21 @@ export function rpcFailure(result: RpcResult): NextResponse {
 // Spin & Win (instantané)
 // ---------------------------------------------------------------------------
 
-export async function playSpin(admin: Admin, userId: string, bet: number) {
+export async function playSpin(userId: string, bet: number) {
   const { seed, hash } = newServerSeed();
   // La référence de tirage est la graine elle-même tirée à part : l'id de
   // partie n'existe qu'après l'insertion SQL.
   const ref = `spin:${hash.slice(0, 16)}`;
   const { index, multiplier } = spinResult(seed, ref);
-  const { data, error } = await admin.rpc('play_instant_round', {
-    p_user_id: userId,
-    p_game: 'spin',
-    p_bet: bet,
-    p_multiplier: multiplier,
-    p_public_state: { segment: index, ref },
-    p_server_seed: seed,
-    p_server_seed_hash: hash,
-  });
-  if (error) throw error;
+  const data = await callFunction('play_instant_round', [
+    userId,
+    'spin',
+    bet,
+    multiplier,
+    JSON.stringify({ segment: index, ref }),
+    seed,
+    hash,
+  ]);
   return { result: asRpcResult(data), index, multiplier, serverSeedHash: hash };
 }
 
@@ -118,39 +112,31 @@ export interface RoundRow {
   id: string;
   user_id: string;
   game: GameId;
-  bet: number;
+  /** numeric renvoyé en texte par pg. */
+  bet: string;
   status: 'active' | 'won' | 'lost';
   public_state: Record<string, unknown>;
   secret_state: Record<string, unknown>;
   server_seed_hash: string;
   version: number;
-  started_at: string;
+  started_at: Date;
 }
 
 export async function loadRound(
-  admin: Admin,
   userId: string,
   roundId: string,
   game: GameId,
 ): Promise<RoundRow | null> {
-  const { data } = await admin
-    .from('game_rounds')
-    .select(
-      'id, user_id, game, bet, status, public_state, secret_state, server_seed_hash, version, started_at',
-    )
-    .eq('id', roundId)
-    .eq('user_id', userId)
-    .eq('game', game)
-    .maybeSingle();
-  return (data as RoundRow | null) ?? null;
+  return queryOne<RoundRow>(
+    `select id, user_id, game, bet, status, public_state, secret_state, server_seed_hash,
+            version, started_at
+       from game_rounds
+      where id = $1 and user_id = $2 and game = $3`,
+    [roundId, userId, game],
+  );
 }
 
-export async function openRound(
-  admin: Admin,
-  userId: string,
-  game: 'apple' | 'aviator',
-  bet: number,
-) {
+export async function openRound(userId: string, game: 'apple' | 'aviator', bet: number) {
   const { seed, hash } = newServerSeed();
   const ref = `${game}:${hash.slice(0, 16)}`;
   const secret =
@@ -159,45 +145,42 @@ export async function openRound(
       : { crash: aviatorCrashPoint(seed, ref) };
   const publicState = game === 'apple' ? { level: 0, picks: [] as number[], ref } : { ref };
 
-  const { data, error } = await admin.rpc('open_round', {
-    p_user_id: userId,
-    p_game: game,
-    p_bet: bet,
-    p_public_state: publicState,
-    p_secret_state: secret,
-    p_server_seed: seed,
-    p_server_seed_hash: hash,
-  });
-  if (error) throw error;
+  const data = await callFunction('open_round', [
+    userId,
+    game,
+    bet,
+    JSON.stringify(publicState),
+    JSON.stringify(secret),
+    seed,
+    hash,
+  ]);
   return { result: asRpcResult(data), serverSeedHash: hash, publicState };
 }
 
 export async function settle(
-  admin: Admin,
   roundId: string,
   status: 'won' | 'lost',
   multiplier: number,
   publicState: Record<string, unknown>,
 ) {
-  const { data, error } = await admin.rpc('settle_round', {
-    p_round_id: roundId,
-    p_status: status,
-    p_multiplier: multiplier,
-    p_public_state: publicState,
-  });
-  if (error) throw error;
+  const data = await callFunction('settle_round', [
+    roundId,
+    status,
+    multiplier,
+    JSON.stringify(publicState),
+  ]);
   return asRpcResult(data);
 }
 
 /** Apple Fortunes : choix d'une case à l'étage courant. */
-export async function applePick(admin: Admin, round: RoundRow, column: number) {
+export async function applePick(round: RoundRow, column: number) {
   const rotten = (round.secret_state.rotten ?? []) as number[];
   const level = Number(round.public_state.level ?? 0);
   const picks = (round.public_state.picks ?? []) as number[];
   const nextPicks = [...picks, column];
 
   if (rotten[level] === column) {
-    const settled = await settle(admin, round.id, 'lost', 0, {
+    const settled = await settle(round.id, 'lost', 0, {
       ...round.public_state,
       level,
       picks: nextPicks,
@@ -209,7 +192,7 @@ export async function applePick(admin: Admin, round: RoundRow, column: number) {
   const cleared = level + 1;
   if (cleared >= APPLE_LEVELS) {
     const multiplier = appleMultiplier(cleared);
-    const settled = await settle(admin, round.id, 'won', multiplier, {
+    const settled = await settle(round.id, 'won', multiplier, {
       ...round.public_state,
       level: cleared,
       picks: nextPicks,
@@ -218,11 +201,11 @@ export async function applePick(admin: Admin, round: RoundRow, column: number) {
     return { outcome: 'completed' as const, level: cleared, multiplier, rotten, settled };
   }
 
-  const { data: advanced } = await admin.rpc('advance_round', {
-    p_round_id: round.id,
-    p_expected_version: round.version,
-    p_public_state: { ...round.public_state, level: cleared, picks: nextPicks },
-  });
+  const advanced = await callFunction<boolean>('advance_round', [
+    round.id,
+    round.version,
+    JSON.stringify({ ...round.public_state, level: cleared, picks: nextPicks }),
+  ]);
   if (advanced !== true) {
     return { outcome: 'conflict' as const, level };
   }
@@ -230,12 +213,12 @@ export async function applePick(admin: Admin, round: RoundRow, column: number) {
 }
 
 /** Aviator : état de la partie à l'instant présent (crash éventuel réglé). */
-export async function aviatorTick(admin: Admin, round: RoundRow) {
+export async function aviatorTick(round: RoundRow) {
   const crash = Number(round.secret_state.crash ?? 1);
   const elapsed = Date.now() - new Date(round.started_at).getTime();
   const current = aviatorMultiplierAt(elapsed);
   if (current >= crash) {
-    await settle(admin, round.id, 'lost', 0, { ...round.public_state, crash });
+    await settle(round.id, 'lost', 0, { ...round.public_state, crash });
     return { crashed: true as const, crash, current: crash };
   }
   return { crashed: false as const, current };

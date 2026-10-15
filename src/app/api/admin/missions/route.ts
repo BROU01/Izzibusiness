@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ERROR_CODES } from '@/lib/error-codes';
 import { apiData, apiError, internalError, readJson } from '@/lib/api-response';
 import { requireAdmin } from '@/lib/admin-api';
+import { queryOne } from '@/lib/db';
 
 const missionSchema = z.object({
   title: z.string().trim().min(5, 'Titre : 5 caractères minimum.').max(120),
@@ -23,21 +24,23 @@ export async function POST(request: Request) {
       return apiError(ERROR_CODES.INVALID_PAYLOAD, parsed.error.issues[0].message, 400);
     }
     const m = parsed.data;
-    const { data, error } = await guard.db
-      .from('missions')
-      .insert({
-        title: m.title,
-        description: m.description,
-        proof_instructions: m.proofInstructions,
-        reward: m.reward,
-        max_completions: m.maxCompletions ?? null,
-        status: m.status,
-        created_by: guard.adminId,
-      })
-      .select('id')
-      .single();
-    if (error) return internalError('admin mission create', error);
-    return apiData({ id: data.id }, 201);
+    const row = await queryOne<{ id: string }>(
+      `insert into missions
+         (title, description, proof_instructions, reward, max_completions, status, created_by)
+       values ($1, $2, $3, $4, $5, $6, $7)
+       returning id`,
+      [
+        m.title,
+        m.description,
+        m.proofInstructions,
+        m.reward,
+        m.maxCompletions ?? null,
+        m.status,
+        guard.adminId,
+      ],
+    );
+    if (!row) return internalError('admin mission create', new Error('Insertion sans retour'));
+    return apiData({ id: row.id }, 201);
   } catch (error) {
     return internalError('admin mission create', error);
   }

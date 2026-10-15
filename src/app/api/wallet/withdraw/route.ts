@@ -11,7 +11,7 @@ import {
   requireUser,
 } from '@/lib/api-response';
 import { MIN_WITHDRAWAL, WITHDRAWAL_FEE_RATE, WITHDRAW_OPERATORS, formatFcfa } from '@/lib/config';
-import { createServiceClient } from '@/lib/supabase/server';
+import { callFunction, query } from '@/lib/db';
 
 const schema = z.object({
   amount: z.coerce
@@ -53,14 +53,13 @@ export async function POST(request: Request) {
     const amount = parsed.data.amount;
     const fee = Math.ceil(amount * WITHDRAWAL_FEE_RATE);
 
-    const { data, error } = await createServiceClient().rpc('request_withdrawal', {
-      p_user_id: auth.user.id,
-      p_amount: amount,
-      p_fee: fee,
-      p_phone: auth.profile.phone,
-      p_mode: operator.mode,
-    });
-    if (error) return internalError('withdraw POST', error);
+    const data = await callFunction('request_withdrawal', [
+      auth.user.id,
+      amount,
+      fee,
+      auth.profile.phone,
+      operator.mode,
+    ]);
 
     const result = asRpcResult(data);
     if (!result.success) {
@@ -94,24 +93,34 @@ export async function GET() {
     const auth = await requireUser();
     if (auth.response) return auth.response;
 
-    const { data, error } = await auth.supabase
-      .from('withdrawals')
-      .select('id, amount, fee, withdraw_mode, status, admin_note, created_at')
-      .eq('user_id', auth.user.id)
-      .order('created_at', { ascending: false })
-      .limit(20);
-    if (error) return internalError('withdraw GET', error);
+    const rows = await query<{
+      id: string;
+      amount: number;
+      fee: number;
+      withdraw_mode: string;
+      status: string;
+      admin_note: string | null;
+      created_at: Date;
+    }>(
+      `select id, amount::float8 as amount, fee::float8 as fee, withdraw_mode, status,
+              admin_note, created_at
+         from withdrawals
+        where user_id = $1
+        order by created_at desc
+        limit 20`,
+      [auth.user.id],
+    );
 
     return NextResponse.json({
       success: true,
-      withdrawals: (data ?? []).map((w) => ({
+      withdrawals: rows.map((w) => ({
         id: w.id,
         amount: Number(w.amount),
         fee: Number(w.fee),
         operator: w.withdraw_mode,
         status: w.status,
         note: w.status === 'rejected' || w.status === 'failed' ? w.admin_note : null,
-        createdAt: w.created_at,
+        createdAt: w.created_at.toISOString(),
       })),
     });
   } catch (error) {

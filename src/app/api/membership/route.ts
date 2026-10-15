@@ -12,7 +12,7 @@ import {
   requireUser,
 } from '@/lib/api-response';
 import { startCheckout } from '@/lib/payments/checkout';
-import { createServiceClient } from '@/lib/supabase/server';
+import { callFunction, query, queryOne } from '@/lib/db';
 
 // GET - Statut d'adhésion, code de parrainage et filleuls de l'utilisateur connecté.
 export async function GET() {
@@ -20,15 +20,12 @@ export async function GET() {
     const auth = await requireUser();
     if (auth.response) return auth.response;
 
-    const { data: profile, error } = await auth.supabase
-      .from('profiles')
-      .select('is_member, referral_code')
-      .eq('id', auth.user.id)
-      .maybeSingle();
-    if (error) return internalError('membership GET', error);
+    const profile = await queryOne<{ is_member: boolean; referral_code: string | null }>(
+      'select is_member, referral_code from profiles where id = $1',
+      [auth.user.id],
+    );
 
-    // Les filleuls ne sont pas lisibles via RLS (profils d'autres comptes) :
-    // lecture serveur restreinte au pseudo, à la date et au statut.
+    // Filleuls (profils d'autres comptes) : uniquement pseudo, date et statut.
     let referrals: Array<{
       id: string;
       username: string;
@@ -37,18 +34,26 @@ export async function GET() {
       createdAt: string;
     }> = [];
     if (profile?.referral_code) {
-      const { data } = await createServiceClient()
-        .from('profiles')
-        .select('id, username, is_member, created_at')
-        .eq('referred_by', profile.referral_code)
-        .order('created_at', { ascending: false })
-        .limit(100);
-      referrals = (data ?? []).map((r) => ({
+      const rows = await query<{
+        id: string;
+        username: string | null;
+        is_member: boolean;
+        created_at: Date;
+      }>(
+        `select p.id, u.username, p.is_member, p.created_at
+           from profiles p
+           join "user" u on u.id = p.id
+          where p.referred_by = $1
+          order by p.created_at desc
+          limit 100`,
+        [profile.referral_code],
+      );
+      referrals = rows.map((r) => ({
         id: r.id,
         username: r.username ?? 'membre',
         status: r.is_member ? 'active' : 'pending',
         earned: r.is_member ? REFERRAL_BONUS : 0,
-        createdAt: r.created_at,
+        createdAt: r.created_at.toISOString(),
       }));
     }
 
@@ -80,12 +85,11 @@ export async function POST(request: Request) {
     }
 
     if (parsed.data.method === 'wallet') {
-      const { data, error } = await createServiceClient().rpc('pay_membership_from_wallet', {
-        p_user_id: auth.user.id,
-        p_fee: ADHESION_FEE,
-        p_referral_bonus: REFERRAL_BONUS,
-      });
-      if (error) return internalError('membership wallet', error);
+      const data = await callFunction('pay_membership_from_wallet', [
+        auth.user.id,
+        ADHESION_FEE,
+        REFERRAL_BONUS,
+      ]);
       const result = asRpcResult(data);
       if (!result.success) {
         return apiError(

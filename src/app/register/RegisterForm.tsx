@@ -45,7 +45,6 @@ export default function RegisterForm() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [confirmEmailFor, setConfirmEmailFor] = useState<string | null>(null);
 
   const country = findCountry(fields.country);
 
@@ -67,20 +66,12 @@ export default function RegisterForm() {
     }
 
     setSubmitting(true);
-    const result = await postJson<{ status: 'signed_in' | 'confirm_email'; email: string }>(
-      '/api/auth/register',
-      fields,
-    );
+    const result = await postJson<{ status: 'signed_in' }>('/api/auth/register', fields);
     setSubmitting(false);
 
     if (!result.ok) {
       setErrors(result.error.fields);
       setFormError(result.error.message);
-      return;
-    }
-
-    if (result.data.status === 'confirm_email') {
-      setConfirmEmailFor(result.data.email);
       return;
     }
 
@@ -101,26 +92,6 @@ export default function RegisterForm() {
       </Link>
     </p>
   );
-
-  if (confirmEmailFor) {
-    return (
-      <AuthShell
-        eyebrow="Dernière étape"
-        title="Vérifie ta boîte mail."
-        intro="Ton compte est créé. Il ne reste qu’à confirmer ton adresse e-mail."
-        footer={footer}
-      >
-        <FormAlert tone="success">
-          Un lien de confirmation a été envoyé à <strong>{confirmEmailFor}</strong>. Ouvre-le depuis
-          ce téléphone ou cet ordinateur pour activer ton compte.
-        </FormAlert>
-        <p className="mt-4 text-sm text-ink-70">
-          Rien reçu après quelques minutes ? Regarde dans les spams, puis vérifie que l’adresse est
-          correcte.
-        </p>
-      </AuthShell>
-    );
-  }
 
   return (
     <AuthShell

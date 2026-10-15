@@ -13,7 +13,7 @@ description: Intégrer ou modifier un flux de paiement PayDunya (dépôt, adhés
 | Création de facture + ligne `payments`  | `src/lib/payments/checkout.ts`                    |
 | Synchronisation (IPN et page de retour) | `src/lib/payments/sync.ts`                        |
 | Retraits admin                          | `src/lib/payments/withdrawals.ts`                 |
-| Fonctions SQL d'argent                  | `supabase/migrations/007_payments_games_missions.sql` |
+| Fonctions SQL d'argent                  | `db/migrations/001_schema.sql` |
 | Constantes métier                       | `src/lib/config.ts`                               |
 | Guide de configuration                  | `docs/paydunya.md`                                |
 

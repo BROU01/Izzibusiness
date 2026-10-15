@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { LoadError, formatDate } from '@/components/admin/DataTable';
-import { createClient } from '@/lib/supabase/server';
+import { load, requireAdminPage } from '../_lib/load';
 import { formatFcfa } from '@/lib/config';
 import { PAYMENT_KIND, PAYMENT_STATUS } from '@/lib/labels';
 import { isPaydunyaConfigured, isPaydunyaLive } from '@/lib/paydunya';
@@ -17,14 +17,24 @@ export default async function AdminPaymentsPage({
   const { status } = await searchParams;
   const filter = status && status in PAYMENT_STATUS ? status : null;
 
-  const supabase = await createClient();
-  let query = supabase
-    .from('payments')
-    .select('id, user_id, kind, amount, status, provider_token, created_at, completed_at')
-    .order('created_at', { ascending: false })
-    .limit(100);
-  if (filter) query = query.eq('status', filter);
-  const { data, error } = await query;
+  await requireAdminPage();
+  const { data, error } = await load<{
+    id: string;
+    user_id: string;
+    kind: string;
+    amount: string;
+    status: string;
+    provider_token: string | null;
+    created_at: Date;
+    completed_at: Date | null;
+  }>(
+    `select id, user_id, kind, amount, status, provider_token, created_at, completed_at
+       from payments
+      where ($1::text is null or status = $1)
+      order by created_at desc
+      limit 100`,
+    [filter],
+  );
 
   return (
     <div>

@@ -2,13 +2,15 @@ import { ERROR_CODES } from '@/lib/error-codes';
 import { apiData, apiError, internalError, readJson } from '@/lib/api-response';
 import { fieldErrors, registerSchema } from '@/lib/auth/schemas';
 import { toE164 } from '@/lib/auth/countries';
-import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { getSiteUrl } from '@/lib/site-url';
+import { authErrorCode } from '@/lib/auth/errors';
+import { getAuth } from '@/lib/auth';
+import { callFunction, query, queryOne } from '@/lib/db';
+import { clientIp, hitRateLimit } from '@/lib/rate-limit';
 
 /**
  * Inscription : pseudo, e-mail, pays, téléphone, parrain, mot de passe.
- * Le profil et le wallet sont créés par le trigger SQL `handle_new_user`
- * (migration 006) à partir des métadonnées passées à signUp.
+ * Better Auth crée le compte et ouvre la session (cookie httpOnly), puis la
+ * fonction SQL create_member crée le profil et le wallet.
  */
 export async function POST(request: Request) {
   const parsed = registerSchema.safeParse(await readJson(request));
@@ -29,95 +31,79 @@ export async function POST(request: Request) {
   const { username, email, country, password, referralCode } = parsed.data;
   const phone = toE164(country, parsed.data.phone);
   if (!phone) {
-    return Response.json(
-      {
-        error: {
-          code: ERROR_CODES.INVALID_PAYLOAD,
-          message: 'Numéro de téléphone invalide pour ce pays.',
-          fields: { phone: 'Numéro de téléphone invalide pour ce pays.' },
-        },
-      },
-      { status: 400 },
-    );
+    return fieldError('phone', 'Numéro de téléphone invalide pour ce pays.', 400);
   }
 
   try {
-    const admin = createServiceClient();
+    if (!(await hitRateLimit(`register:${clientIp(request)}`, 5, 60 * 60))) {
+      return apiError(
+        ERROR_CODES.RATE_LIMITED,
+        'Trop d’inscriptions depuis cette connexion. Réessaie dans une heure.',
+        429,
+      );
+    }
 
-    // Unicité vérifiée avant signUp pour renvoyer un message précis ;
+    // Unicité vérifiée avant création pour renvoyer un message précis ;
     // les contraintes UNIQUE en base restent le garde-fou final.
-    const [{ data: byUsername }, { data: byPhone }] = await Promise.all([
-      admin.from('profiles').select('id').eq('username', username).maybeSingle(),
-      admin.from('profiles').select('id').eq('phone', phone).maybeSingle(),
+    const [byUsername, byEmail, byPhone] = await Promise.all([
+      queryOne('select 1 from "user" where username = $1', [username]),
+      queryOne('select 1 from "user" where email = $1', [email]),
+      queryOne('select 1 from profiles where phone = $1', [phone]),
     ]);
-    if (byUsername) {
-      return conflict('username', 'Ce pseudo est déjà pris.');
-    }
-    if (byPhone) {
-      return conflict('phone', 'Ce numéro est déjà associé à un compte.');
-    }
+    if (byUsername) return fieldError('username', 'Ce pseudo est déjà pris.', 409);
+    if (byEmail) return fieldError('email', 'Cette adresse e-mail est déjà utilisée.', 409);
+    if (byPhone) return fieldError('phone', 'Ce numéro est déjà associé à un compte.', 409);
 
     if (referralCode) {
-      const { data: sponsor } = await admin
-        .from('profiles')
-        .select('id')
-        .eq('referral_code', referralCode)
-        .maybeSingle();
+      const sponsor = await queryOne('select 1 from profiles where referral_code = $1', [
+        referralCode,
+      ]);
       if (!sponsor) {
-        return Response.json(
-          {
-            error: {
-              code: ERROR_CODES.INVALID_PAYLOAD,
-              message: 'Ce code de parrainage n’existe pas.',
-              fields: { referralCode: 'Ce code de parrainage n’existe pas.' },
-            },
-          },
-          { status: 400 },
-        );
+        return fieldError('referralCode', 'Ce code de parrainage n’existe pas.', 400);
       }
     }
 
-    const supabase = await createClient();
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: `${getSiteUrl(request.url)}/auth/callback?next=/dashboard`,
-        data: {
-          username,
-          country,
-          phone,
-          referred_by: referralCode ?? null,
-        },
-      },
-    });
-
-    if (error) {
-      if (error.code === 'user_already_exists' || error.code === 'email_exists') {
-        return conflict('email', 'Cette adresse e-mail est déjà utilisée.');
+    let userId: string;
+    try {
+      const result = await getAuth().api.signUpEmail({
+        body: { email, password, name: username, username },
+        headers: request.headers,
+      });
+      userId = result.user.id;
+    } catch (error) {
+      const code = authErrorCode(error);
+      if (code === 'USERNAME_IS_ALREADY_TAKEN') {
+        return fieldError('username', 'Ce pseudo est déjà pris.', 409);
       }
-      if (error.code === 'weak_password') {
-        return apiError(ERROR_CODES.INVALID_PAYLOAD, 'Mot de passe trop faible.', 400);
+      if (code?.startsWith('USER_ALREADY_EXISTS')) {
+        return fieldError('email', 'Cette adresse e-mail est déjà utilisée.', 409);
       }
-      if (error.status === 429) {
-        return apiError(
-          ERROR_CODES.RATE_LIMITED,
-          'Trop de tentatives. Patiente quelques minutes.',
-          429,
-        );
-      }
-      return internalError('auth/register', error);
+      throw error;
     }
 
-    return apiData({ status: data.session ? 'signed_in' : 'confirm_email', email }, 201);
+    try {
+      await callFunction('create_member', [userId, phone, country, referralCode ?? null]);
+    } catch (error) {
+      // Profil impossible (numéro pris entre-temps…) : on n'abandonne pas un
+      // compte sans profil ni wallet. Les sessions partent avec (cascade).
+      await query('delete from "user" where id = $1', [userId]);
+      if (isUniqueViolation(error)) {
+        return fieldError('phone', 'Ce numéro est déjà associé à un compte.', 409);
+      }
+      throw error;
+    }
+
+    return apiData({ status: 'signed_in' }, 201);
   } catch (error) {
     return internalError('auth/register', error);
   }
 }
 
-function conflict(field: string, message: string) {
-  return Response.json(
-    { error: { code: ERROR_CODES.CONFLICT, message, fields: { [field]: message } } },
-    { status: 409 },
-  );
+function fieldError(field: string, message: string, status: number) {
+  const code = status === 409 ? ERROR_CODES.CONFLICT : ERROR_CODES.INVALID_PAYLOAD;
+  return Response.json({ error: { code, message, fields: { [field]: message } } }, { status });
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === '23505';
 }

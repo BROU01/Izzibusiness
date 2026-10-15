@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { LoadError, formatDate } from '@/components/admin/DataTable';
-import { createClient } from '@/lib/supabase/server';
+import { likePattern, load, requireAdminPage } from '../_lib/load';
 import { findCountry } from '@/lib/auth/countries';
 
 export const dynamic = 'force-dynamic';
@@ -17,39 +17,64 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: 'admins', label: 'Admins' },
 ];
 
+// $1 : motif ilike (null = pas de recherche), $2 : filtre (identifiant de FILTERS).
+const USERS_WHERE = `where ($1::text is null
+         or u.username ilike $1 or u.email ilike $1 or p.phone ilike $1)
+    and case $2::text
+          when 'members' then p.is_member
+          when 'non_members' then not p.is_member
+          when 'banned' then p.is_banned
+          when 'admins' then p.role = 'admin'
+          else true
+        end`;
+
 /** Recherche, filtres et pagination des comptes. */
 export default async function AdminUsersPage({
   searchParams,
 }: {
   searchParams: Promise<{ q?: string; filter?: string; page?: string }>;
 }) {
+  await requireAdminPage();
   const params = await searchParams;
-  // Caractères réservés de la syntaxe PostgREST retirés de la recherche.
-  const q = (params.q ?? '')
-    .replace(/[,()*%\\]/g, '')
-    .trim()
-    .slice(0, 60);
+  // Recherche passée en paramètre SQL ; %, _ et \ sont échappés par likePattern.
+  const q = (params.q ?? '').trim().slice(0, 60);
   const filter = (FILTERS.find((f) => f.id === params.filter)?.id ?? 'all') as Filter;
   const page = Math.max(1, Number.parseInt(params.page ?? '1', 10) || 1);
 
-  const supabase = await createClient();
-  let query = supabase
-    .from('profiles')
-    .select('id, username, email, phone, country, role, is_member, is_banned, created_at', {
-      count: 'exact',
-    })
-    .order('created_at', { ascending: false })
-    .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
-
-  if (q) query = query.or(`username.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%`);
-  if (filter === 'members') query = query.eq('is_member', true);
-  if (filter === 'non_members') query = query.eq('is_member', false);
-  if (filter === 'banned') query = query.eq('is_banned', true);
-  if (filter === 'admins') query = query.eq('role', 'admin');
-
-  const { data, count, error } = await query;
-  const rows = data ?? [];
-  const total = count ?? 0;
+  const { data, error } = await load<{
+    id: string;
+    username: string | null;
+    email: string | null;
+    phone: string;
+    country: string | null;
+    role: string;
+    is_member: boolean;
+    is_banned: boolean;
+    created_at: Date;
+    total: number;
+  }>(
+    `select p.id, u.username, u.email, p.phone, p.country, p.role, p.is_member, p.is_banned,
+            p.created_at, count(*) over ()::int as total
+       from profiles p
+       join "user" u on u.id = p.id
+      ${USERS_WHERE}
+      order by p.created_at desc
+      limit $3 offset $4`,
+    [q ? likePattern(q) : null, filter, PAGE_SIZE, (page - 1) * PAGE_SIZE],
+  );
+  const rows = data;
+  let total = rows[0]?.total ?? 0;
+  if (!error && rows.length === 0 && page > 1) {
+    // Page au-delà de la fin : le total n'est pas porté par une ligne.
+    const counted = await load<{ total: number }>(
+      `select count(*)::int as total
+         from profiles p
+         join "user" u on u.id = p.id
+        ${USERS_WHERE}`,
+      [q ? likePattern(q) : null, filter],
+    );
+    total = counted.data[0]?.total ?? 0;
+  }
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const href = (next: { filter?: Filter; page?: number }) => {

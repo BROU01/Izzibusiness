@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ERROR_CODES } from '@/lib/error-codes';
 import { apiData, apiError, internalError, readJson, requireProfile } from '@/lib/api-response';
-import { createServiceClient } from '@/lib/supabase/server';
+import { query } from '@/lib/db';
 
 const schema = z.object({
   adult: z.literal(true, 'Les jeux sont réservés aux personnes majeures.'),
@@ -19,12 +19,11 @@ export async function POST(request: Request) {
       return apiError(ERROR_CODES.INVALID_PAYLOAD, parsed.error.issues[0].message, 400);
     }
 
-    const { error } = await createServiceClient()
-      .from('profiles')
-      .update({ games_accepted_at: new Date().toISOString() })
-      .eq('id', auth.user.id)
-      .is('games_accepted_at', null);
-    if (error) return internalError('games accept', error);
+    await query(
+      `update profiles set games_accepted_at = now()
+        where id = $1 and games_accepted_at is null`,
+      [auth.user.id],
+    );
     return apiData({ accepted: true });
   } catch (error) {
     return internalError('games accept', error);

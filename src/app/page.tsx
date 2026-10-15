@@ -11,7 +11,7 @@ import {
   WITHDRAWAL_FEE_RATE,
   formatFcfa,
 } from '@/lib/config';
-import { createClient } from '@/lib/supabase/server';
+import { getSessionUser } from '@/lib/session';
 import {
   FaqAccordion,
   HeroItem,
@@ -126,11 +126,7 @@ const FAQ = [
 
 async function isSignedIn(): Promise<boolean> {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    return Boolean(user);
+    return Boolean(await getSessionUser());
   } catch {
     return false;
   }

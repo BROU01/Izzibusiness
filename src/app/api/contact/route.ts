@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { query } from '@/lib/db';
 import { internalError } from '@/lib/api-response';
+import { clientIp, hitRateLimit } from '@/lib/rate-limit';
 
 /**
  * Réception des messages du formulaire /contact.
  *
  * Le message est inséré dans la table `contact_messages`
- * (migration 003_create_contact_messages.sql) pour traitement par le support.
+ * (db/migrations/001_schema.sql) pour traitement par le support.
  *
  * Champs : nom (2-80), email optionnel (5-120), message (10-2000).
  * Validation stricte : aucune donnée n'est réexpédiée telle quelle au client.
@@ -49,14 +50,19 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const supabase = await createClient();
-    const { error } = await supabase.from('contact_messages').insert({
-      name: cleanName,
-      email: cleanEmail || null,
-      message: cleanMessage,
-    });
+    // Formulaire public : 5 messages par heure et par connexion.
+    if (!(await hitRateLimit(`contact:${clientIp(request)}`, 5, 60 * 60))) {
+      return NextResponse.json(
+        { success: false, message: 'Trop de messages envoyés. Réessaie dans une heure.' },
+        { status: 429 },
+      );
+    }
 
-    if (error) return internalError('contact POST', error);
+    await query('insert into contact_messages (name, email, message) values ($1, $2, $3)', [
+      cleanName,
+      cleanEmail || null,
+      cleanMessage,
+    ]);
 
     return NextResponse.json({
       success: true,

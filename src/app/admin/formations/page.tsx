@@ -2,7 +2,7 @@ import Link from 'next/link';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { LoadError, formatDate } from '@/components/admin/DataTable';
 import ActionButton from '@/components/admin/ActionButton';
-import { createClient } from '@/lib/supabase/server';
+import { load, requireAdminPage } from '../_lib/load';
 import { REGISTRATION_STATUS } from '@/lib/labels';
 
 export const dynamic = 'force-dynamic';
@@ -22,12 +22,23 @@ const NEXT_STEPS: Record<string, { status: string; label: string }[]> = {
 
 /** Demandes d'inscription envoyées depuis la page Formations. */
 export default async function AdminFormationsPage() {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from('course_registrations')
-    .select('id, user_id, full_name, phone, goal, level, formation, status, created_at')
-    .order('created_at', { ascending: false })
-    .limit(200);
+  await requireAdminPage();
+  const { data, error } = await load<{
+    id: string;
+    user_id: string;
+    full_name: string;
+    phone: string;
+    goal: string | null;
+    level: string;
+    formation: string;
+    status: string;
+    created_at: Date;
+  }>(
+    `select id, user_id, full_name, phone, goal, level, formation, status, created_at
+       from course_registrations
+      order by created_at desc
+      limit 200`,
+  );
 
   return (
     <div>

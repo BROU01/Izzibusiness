@@ -2,14 +2,13 @@ import { z } from 'zod';
 import { ERROR_CODES } from '@/lib/error-codes';
 import { apiData, apiError, internalError, readJson } from '@/lib/api-response';
 import { requireAdmin } from '@/lib/admin-api';
+import { query } from '@/lib/db';
 
 const schema = z.object({
   title: z.string().trim().min(3, 'Titre : 3 caractères minimum.').max(120),
   message: z.string().trim().min(5, 'Message : 5 caractères minimum.').max(1000),
   audience: z.enum(['all', 'members']),
 });
-
-const BATCH = 500;
 
 // POST - Annonce envoyée dans les notifications de tous les comptes (ou des adhérents).
 export async function POST(request: Request) {
@@ -22,24 +21,19 @@ export async function POST(request: Request) {
       return apiError(ERROR_CODES.INVALID_PAYLOAD, parsed.error.issues[0].message, 400);
     }
 
-    let query = guard.db.from('profiles').select('id').eq('is_banned', false);
-    if (parsed.data.audience === 'members') query = query.eq('is_member', true);
-    const { data: recipients, error } = await query;
-    if (error) return internalError('admin broadcast', error);
-
-    const rows = (recipients ?? []).map((r) => ({
-      user_id: r.id,
-      title: parsed.data.title,
-      message: parsed.data.message,
-      type: 'info',
-    }));
-    for (let i = 0; i < rows.length; i += BATCH) {
-      const { error: insertError } = await guard.db
-        .from('notifications')
-        .insert(rows.slice(i, i + BATCH));
-      if (insertError) return internalError('admin broadcast insert', insertError);
-    }
-    return apiData({ sent: rows.length });
+    // Une seule insertion ensembliste : pas de liste de destinataires en mémoire.
+    const rows = await query<{ sent: number }>(
+      `with inserted as (
+         insert into notifications (user_id, title, message, type)
+         select p.id, $1, $2, 'info'
+           from profiles p
+          where not p.is_banned and ($3::boolean = false or p.is_member)
+         returning 1
+       )
+       select count(*)::int as sent from inserted`,
+      [parsed.data.title, parsed.data.message, parsed.data.audience === 'members'],
+    );
+    return apiData({ sent: rows[0]?.sent ?? 0 });
   } catch (error) {
     return internalError('admin broadcast', error);
   }

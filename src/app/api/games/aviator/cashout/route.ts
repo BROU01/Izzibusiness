@@ -22,19 +22,19 @@ export async function POST(request: Request) {
     const parsed = roundSchema.safeParse(await readJson(request));
     if (!parsed.success) return apiError(ERROR_CODES.INVALID_PAYLOAD, 'Partie invalide.', 400);
 
-    const round = await loadRound(player.admin, player.userId, parsed.data.roundId, 'aviator');
+    const round = await loadRound(player.userId, parsed.data.roundId, 'aviator');
     if (!round) return apiError(ERROR_CODES.NOT_FOUND, 'Partie introuvable.', 404);
     if (round.status !== 'active') {
       return apiError(ERROR_CODES.CONFLICT, 'Cette partie est terminée.', 409);
     }
 
-    const tick = await aviatorTick(player.admin, round);
+    const tick = await aviatorTick(round);
     if (tick.crashed) {
       return apiData({ outcome: 'lost', crash: tick.crash });
     }
 
     const crash = Number(round.secret_state.crash);
-    const result = await settle(player.admin, round.id, 'won', tick.current, {
+    const result = await settle(round.id, 'won', tick.current, {
       ...round.public_state,
       crash,
       cashedAt: tick.current,

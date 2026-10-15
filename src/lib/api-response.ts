@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
-import type { User } from '@supabase/supabase-js';
 import { ERROR_CODES, type ErrorCode } from './error-codes';
-import { createClient } from './supabase/server';
-import { SupabaseNotConfiguredError } from './supabase/env';
+import { DatabaseNotConfiguredError, queryOne } from './db';
+import { getMemberProfile, getSessionUser, type MemberProfile, type SessionUser } from './session';
 import { PaydunyaNotConfiguredError } from './paydunya';
 
 export function apiError(code: ErrorCode, message: string, status: number) {
@@ -23,7 +22,7 @@ export function serviceUnavailable() {
 
 /** Erreur inattendue : journalisée côté serveur, jamais renvoyée telle quelle. */
 export function internalError(scope: string, error: unknown) {
-  if (error instanceof SupabaseNotConfiguredError) return serviceUnavailable();
+  if (error instanceof DatabaseNotConfiguredError) return serviceUnavailable();
   if (error instanceof PaydunyaNotConfiguredError) {
     return apiError(
       ERROR_CODES.SERVICE_UNAVAILABLE,
@@ -44,74 +43,53 @@ export async function readJson(request: Request): Promise<unknown> {
   }
 }
 
-/**
- * Utilisateur authentifié de la requête, vérifié auprès de Supabase Auth
- * (getUser revalide le jeton, contrairement à getSession).
- */
+/** Utilisateur connecté (session Better Auth vérifiée côté serveur), sinon 401. */
 export async function requireUser(): Promise<
-  | { user: User; supabase: Awaited<ReturnType<typeof createClient>>; response?: never }
-  | { user?: never; supabase?: never; response: NextResponse }
+  { user: SessionUser; response?: never } | { user?: never; response: NextResponse }
 > {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getSessionUser();
   if (!user) {
     return {
       response: apiError(ERROR_CODES.UNAUTHORIZED, 'Connecte-toi pour continuer.', 401),
     };
   }
-  return { user, supabase };
+  // La session est mise en cache 5 min dans le cookie : le bannissement est
+  // revérifié en base à chaque appel.
+  const banned = await queryOne<{ is_banned: boolean }>(
+    'select is_banned from profiles where id = $1',
+    [user.id],
+  );
+  if (banned?.is_banned) {
+    return {
+      response: apiError(
+        ERROR_CODES.FORBIDDEN,
+        'Ce compte est suspendu. Contacte le support.',
+        403,
+      ),
+    };
+  }
+  return { user };
 }
 
-export interface MemberProfile {
-  id: string;
-  username: string | null;
-  role: 'user' | 'admin';
-  isMember: boolean;
-  isBanned: boolean;
-  country: string | null;
-  phone: string | null;
-  gamesAcceptedAt: string | null;
-}
+export type { MemberProfile };
 
 /**
- * Utilisateur connecté + profil. Refuse les comptes bannis (403) et, si
- * `member` est demandé, les comptes sans adhésion (403).
+ * Utilisateur connecté + profil lu en base. Refuse les comptes bannis (403),
+ * et selon les options les non-admins ou les comptes sans adhésion (403).
  */
-export async function requireProfile(options: { member?: boolean; admin?: boolean } = {}): Promise<
-  | {
-      user: User;
-      profile: MemberProfile;
-      supabase: Awaited<ReturnType<typeof createClient>>;
-      response?: never;
-    }
-  | { user?: never; profile?: never; supabase?: never; response: NextResponse }
+export async function requireProfile(
+  options: { member?: boolean; admin?: boolean } = {},
+): Promise<
+  | { user: SessionUser; profile: MemberProfile; response?: never }
+  | { user?: never; profile?: never; response: NextResponse }
 > {
   const auth = await requireUser();
   if (auth.response) return { response: auth.response };
 
-  const { data } = await auth.supabase
-    .from('profiles')
-    .select('id, username, role, is_member, is_banned, country, phone, games_accepted_at')
-    .eq('id', auth.user.id)
-    .maybeSingle();
-
-  if (!data) {
+  const profile = await getMemberProfile(auth.user.id);
+  if (!profile) {
     return { response: apiError(ERROR_CODES.FORBIDDEN, 'Profil introuvable.', 403) };
   }
-
-  const profile: MemberProfile = {
-    id: data.id,
-    username: data.username ?? null,
-    role: data.role === 'admin' ? 'admin' : 'user',
-    isMember: data.is_member === true,
-    isBanned: data.is_banned === true,
-    country: data.country ?? null,
-    phone: data.phone ?? null,
-    gamesAcceptedAt: data.games_accepted_at ?? null,
-  };
-
   if (profile.isBanned) {
     return {
       response: apiError(
@@ -134,7 +112,7 @@ export async function requireProfile(options: { member?: boolean; admin?: boolea
     };
   }
 
-  return { user: auth.user, profile, supabase: auth.supabase };
+  return { user: auth.user, profile };
 }
 
 /** Résultat d'une fonction SQL d'argent : `{ success, error?, ... }`. */

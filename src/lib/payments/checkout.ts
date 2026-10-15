@@ -1,4 +1,4 @@
-import { createServiceClient } from '@/lib/supabase/server';
+import { query } from '@/lib/db';
 import { createCheckoutInvoice } from '@/lib/paydunya';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -24,14 +24,11 @@ export async function startCheckout(params: {
     customData: { user_id: params.userId, kind: params.kind },
   });
 
-  const { error } = await createServiceClient().from('payments').insert({
-    user_id: params.userId,
-    kind: params.kind,
-    amount: params.amount,
-    provider_token: invoice.token,
-    checkout_url: invoice.checkoutUrl,
-  });
-  if (error) throw error;
+  await query(
+    `insert into payments (user_id, kind, amount, provider_token, checkout_url)
+     values ($1, $2, $3, $4, $5)`,
+    [params.userId, params.kind, params.amount, invoice.token, invoice.checkoutUrl],
+  );
 
   return { checkoutUrl: invoice.checkoutUrl };
 }

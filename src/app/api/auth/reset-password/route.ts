@@ -1,47 +1,48 @@
+import { z } from 'zod';
 import { ERROR_CODES } from '@/lib/error-codes';
-import { apiData, apiError, internalError, readJson, requireUser } from '@/lib/api-response';
+import { apiData, apiError, internalError, readJson } from '@/lib/api-response';
 import { fieldErrors, resetPasswordSchema } from '@/lib/auth/schemas';
+import { authErrorCode } from '@/lib/auth/errors';
+import { getAuth } from '@/lib/auth';
+
+const bodySchema = z.object({ token: z.string().min(10).max(200) }).and(resetPasswordSchema);
 
 /**
- * Nouveau mot de passe. Nécessite la session de récupération ouverte par
- * le lien e-mail (/auth/callback?next=/reset-password).
+ * Nouveau mot de passe à partir du jeton reçu par e-mail
+ * (/reset-password?token=…). Toutes les sessions du compte sont fermées.
  */
 export async function POST(request: Request) {
-  try {
-    const auth = await requireUser();
-    if (auth.response) return auth.response;
-
-    const parsed = resetPasswordSchema.safeParse(await readJson(request));
-    if (!parsed.success) {
-      const fields = fieldErrors(parsed.error);
-      return Response.json(
-        {
-          error: {
-            code: ERROR_CODES.INVALID_PAYLOAD,
-            message: Object.values(fields)[0] ?? 'Mot de passe invalide.',
-            fields,
-          },
+  const parsed = bodySchema.safeParse(await readJson(request));
+  if (!parsed.success) {
+    const fields = fieldErrors(parsed.error);
+    return Response.json(
+      {
+        error: {
+          code: ERROR_CODES.INVALID_PAYLOAD,
+          message: fields.token
+            ? 'Lien de réinitialisation invalide. Refais une demande.'
+            : (Object.values(fields)[0] ?? 'Mot de passe invalide.'),
+          fields,
         },
-        { status: 400 },
-      );
-    }
+      },
+      { status: 400 },
+    );
+  }
 
-    const { error } = await auth.supabase.auth.updateUser({ password: parsed.data.password });
-    if (error) {
-      if (error.code === 'same_password') {
-        return apiError(
-          ERROR_CODES.INVALID_PAYLOAD,
-          'Choisis un mot de passe différent de l’ancien.',
-          400,
-        );
-      }
-      if (error.code === 'weak_password') {
-        return apiError(ERROR_CODES.INVALID_PAYLOAD, 'Mot de passe trop faible.', 400);
-      }
-      return internalError('auth/reset-password', error);
-    }
+  try {
+    await getAuth().api.resetPassword({
+      body: { token: parsed.data.token, newPassword: parsed.data.password },
+      headers: request.headers,
+    });
     return apiData({ status: 'updated' });
   } catch (error) {
+    if (authErrorCode(error) === 'INVALID_TOKEN') {
+      return apiError(
+        ERROR_CODES.INVALID_PAYLOAD,
+        'Ce lien a expiré ou a déjà servi. Refais une demande de réinitialisation.',
+        400,
+      );
+    }
     return internalError('auth/reset-password', error);
   }
 }

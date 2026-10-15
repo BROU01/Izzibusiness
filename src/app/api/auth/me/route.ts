@@ -1,6 +1,5 @@
 import { apiData, internalError } from '@/lib/api-response';
-import { createClient } from '@/lib/supabase/server';
-import { SupabaseNotConfiguredError } from '@/lib/supabase/env';
+import { getCurrentProfile } from '@/lib/session';
 
 /**
  * Profil minimal de l'utilisateur connecté (navigation, tableau de bord).
@@ -9,32 +8,20 @@ import { SupabaseNotConfiguredError } from '@/lib/supabase/env';
  */
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) return apiData(null);
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('username, name, role, is_member, is_banned, referral_code, country, phone')
-      .eq('id', user.id)
-      .maybeSingle();
-
+    const profile = await getCurrentProfile();
+    if (!profile) return apiData(null);
     return apiData({
-      id: user.id,
-      email: user.email ?? null,
-      username: profile?.username ?? null,
-      name: profile?.name ?? null,
-      role: profile?.role === 'admin' ? 'admin' : 'user',
-      isMember: profile?.is_member === true,
-      referralCode: profile?.referral_code ?? null,
-      country: profile?.country ?? null,
-      phone: profile?.phone ?? null,
-      isBanned: profile?.is_banned === true,
+      id: profile.id,
+      email: profile.email,
+      username: profile.username,
+      role: profile.role,
+      isMember: profile.isMember,
+      referralCode: profile.referralCode,
+      country: profile.country,
+      phone: profile.phone,
+      isBanned: profile.isBanned,
     });
   } catch (error) {
-    if (error instanceof SupabaseNotConfiguredError) return apiData(null);
     return internalError('auth/me', error);
   }
 }

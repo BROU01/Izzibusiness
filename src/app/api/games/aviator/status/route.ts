@@ -13,13 +13,13 @@ export async function GET(request: Request) {
     });
     if (!parsed.success) return apiError(ERROR_CODES.INVALID_PAYLOAD, 'Partie invalide.', 400);
 
-    const round = await loadRound(player.admin, player.userId, parsed.data.roundId, 'aviator');
+    const round = await loadRound(player.userId, parsed.data.roundId, 'aviator');
     if (!round) return apiError(ERROR_CODES.NOT_FOUND, 'Partie introuvable.', 404);
     if (round.status !== 'active') {
       return apiData({ status: round.status, crash: round.public_state.crash ?? null });
     }
 
-    const tick = await aviatorTick(player.admin, round);
+    const tick = await aviatorTick(round);
     return tick.crashed
       ? apiData({ status: 'lost', crash: tick.crash })
       : apiData({ status: 'active', current: tick.current });

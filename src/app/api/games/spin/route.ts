@@ -13,7 +13,7 @@ export async function POST(request: Request) {
       return apiError(ERROR_CODES.INVALID_PAYLOAD, parsed.error.issues[0].message, 400);
     }
 
-    const spin = await playSpin(player.admin, player.userId, parsed.data.bet);
+    const spin = await playSpin(player.userId, parsed.data.bet);
     if (!spin.result.success) return rpcFailure(spin.result);
 
     return apiData({
