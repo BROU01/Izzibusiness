@@ -1,264 +1,174 @@
 'use client';
 
-const missions = [
-  {
-    id: 1,
-    title: 'Partager Izzibusiness sur WhatsApp',
-    reward: 500,
-    status: 'available',
-    difficulty: 'Facile',
-  },
-  {
-    id: 2,
-    title: 'Inscrire 3 amis',
-    reward: 1500,
-    status: 'in_progress',
-    progress: 2,
-    total: 3,
-    difficulty: 'Moyen',
-  },
-  {
-    id: 3,
-    title: 'Jouer a 5 parties Aviator',
-    reward: 1000,
-    status: 'completed',
-    difficulty: 'Facile',
-  },
-  { id: 4, title: 'Deposer 10 000 FCFA', reward: 500, status: 'completed', difficulty: 'Facile' },
-  {
-    id: 5,
-    title: 'Completer votre profil',
-    reward: 200,
-    status: 'completed',
-    difficulty: 'Facile',
-  },
-  {
-    id: 6,
-    title: 'Vendre un produit sur le Market',
-    reward: 2000,
-    status: 'available',
-    difficulty: 'Difficile',
-  },
-  {
-    id: 7,
-    title: 'Atteindre 50 000 FCFA de gains',
-    reward: 5000,
-    status: 'available',
-    difficulty: 'Difficile',
-  },
-  {
-    id: 8,
-    title: 'Parrainer 10 personnes',
-    reward: 3000,
-    status: 'available',
-    difficulty: 'Moyen',
-  },
-];
+import { useCallback, useEffect, useId, useState, type FormEvent } from 'react';
+import Link from 'next/link';
+import PageHeader from '@/components/ui/PageHeader';
+import EmptyState from '@/components/ui/EmptyState';
+import { FormAlert } from '@/components/auth/FormField';
+import { postJson } from '@/lib/api-client';
+import { formatFcfa } from '@/lib/config';
+
+interface Mission {
+  id: string;
+  title: string;
+  description: string;
+  proofInstructions: string;
+  reward: number;
+}
+
+interface Submission {
+  id: string;
+  missionId: string;
+  status: 'pending' | 'approved' | 'rejected';
+  note: string | null;
+}
+
+interface MissionsData {
+  isMember: boolean;
+  missions: Mission[];
+  submissions: Submission[];
+}
+
+const STATUS_LABEL: Record<Submission['status'], string> = {
+  pending: 'Preuve envoyée, en vérification',
+  approved: 'Validée, récompense créditée',
+  rejected: 'Refusée',
+};
+
+function SubmitProof({ mission, onSent }: { mission: Mission; onSent: () => void }) {
+  const id = useId();
+  const [proof, setProof] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setBusy(true);
+    const res = await postJson<{ status: string }>(`/api/missions/${mission.id}/submit`, { proof });
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error.message);
+      return;
+    }
+    onSent();
+  }
+
+  return (
+    <form onSubmit={submit} className="mt-4 flex flex-col gap-3" noValidate>
+      {error && <FormAlert tone="error">{error}</FormAlert>}
+      <label htmlFor={id} className="text-sm font-semibold">
+        Ta preuve
+      </label>
+      <textarea
+        id={id}
+        className="input min-h-24"
+        maxLength={1000}
+        value={proof}
+        onChange={(e) => setProof(e.target.value)}
+        aria-describedby={`${id}-hint`}
+      />
+      <p id={`${id}-hint`} className="text-xs text-ink-70">
+        {mission.proofInstructions}
+      </p>
+      <button type="submit" className="btn btn-primary self-start" disabled={busy}>
+        {busy ? 'Envoi…' : `Envoyer ma preuve pour ${formatFcfa(mission.reward)}`}
+      </button>
+    </form>
+  );
+}
 
 export default function MissionsPage() {
-  const completedMissions = missions.filter((m) => m.status === 'completed').length;
-  const totalReward = missions
-    .filter((m) => m.status === 'completed')
-    .reduce((sum, m) => sum + m.reward, 0);
+  const [state, setState] = useState<
+    { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: MissionsData }
+  >({ status: 'loading' });
+  const [version, setVersion] = useState(0);
+  const reload = useCallback(() => setVersion((v) => v + 1), []);
+
+  useEffect(() => {
+    let stop = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/missions', { cache: 'no-store' });
+        const payload = (await res.json()) as { data?: MissionsData };
+        if (stop) return;
+        if (!res.ok || !payload.data) throw new Error('load');
+        setState({ status: 'ready', data: payload.data });
+      } catch {
+        if (!stop) setState({ status: 'error' });
+      }
+    })();
+    return () => {
+      stop = true;
+    };
+  }, [version]);
 
   return (
     <div>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', marginBottom: '4px' }}>Missions</h1>
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-          Complétez des tâches pour gagner des récompenses
+      <PageHeader
+        eyebrow="Mon espace"
+        title="Missions"
+        description="Des tâches publiées par l’équipe, rémunérées sur ton wallet après vérification de ta preuve."
+      />
+
+      {state.status === 'loading' && (
+        <p role="status" className="font-mono text-sm uppercase tracking-wider">
+          Chargement des missions…
         </p>
-      </div>
-
-      {/* Stats */}
-      <div
-        style={{
-          display: 'flex',
-          gap: '24px',
-          padding: '20px',
-          background: 'var(--bg-card)',
-          borderRadius: 'var(--radius)',
-          marginBottom: '24px',
-          border: '1px solid var(--border)',
-        }}
-      >
-        <div style={{ flex: 1, textAlign: 'center' }}>
-          <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--accent)' }}>
-            {completedMissions}/{missions.length}
-          </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Missions complétées</div>
+      )}
+      {state.status === 'error' && (
+        <div>
+          <FormAlert tone="error">Les missions n’ont pas pu être chargées.</FormAlert>
+          <button type="button" className="btn btn-primary mt-4" onClick={reload}>
+            Réessayer
+          </button>
         </div>
-        <div style={{ width: '1px', background: 'var(--border)' }} />
-        <div style={{ flex: 1, textAlign: 'center' }}>
-          <div style={{ fontSize: '24px', fontWeight: 700, color: '#22c55e' }}>
-            {totalReward.toLocaleString()} FCFA
-          </div>
-          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Gagnées</div>
-        </div>
-      </div>
-
-      {/* Progress Bar */}
-      <div className="card" style={{ marginBottom: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-          <span style={{ fontSize: '13px', fontWeight: 600 }}>Progression globale</span>
-          <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-            {((completedMissions / missions.length) * 100).toFixed(0)}%
-          </span>
-        </div>
-        <div
-          style={{
-            height: '8px',
-            background: 'var(--border)',
-            borderRadius: '4px',
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              height: '100%',
-              width: `${(completedMissions / missions.length) * 100}%`,
-              background: 'var(--accent)',
-              borderRadius: '4px',
-              transition: 'width 0.3s',
-            }}
-          />
-        </div>
-      </div>
-
-      {/* Missions List */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        {missions.map((mission) => (
-          <div
-            key={mission.id}
-            className="card"
-            style={{
-              opacity: mission.status === 'completed' ? 0.7 : 1,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <div
-                style={{
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: 'var(--radius)',
-                  background:
-                    mission.status === 'completed' ? 'var(--success)' : 'var(--accent-light)',
-                  color: mission.status === 'completed' ? 'white' : 'var(--accent)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  flexShrink: 0,
-                }}
-              >
-                {mission.id}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}
-                >
-                  <span style={{ fontWeight: 600, fontSize: '14px' }}>{mission.title}</span>
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      padding: '2px 8px',
-                      borderRadius: '10px',
-                      background:
-                        mission.difficulty === 'Facile'
-                          ? '#dcfce7'
-                          : mission.difficulty === 'Moyen'
-                            ? '#fef3c7'
-                            : '#fee2e2',
-                      color:
-                        mission.difficulty === 'Facile'
-                          ? 'var(--success)'
-                          : mission.difficulty === 'Moyen'
-                            ? 'var(--warning)'
-                            : 'var(--error)',
-                      fontWeight: 600,
-                    }}
-                  >
-                    {mission.difficulty}
-                  </span>
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  Récompense:{' '}
-                  <strong style={{ color: '#22c55e' }}>
-                    {mission.reward.toLocaleString()} FCFA
-                  </strong>
-                </div>
-                {mission.status === 'in_progress' && mission.progress !== undefined && (
-                  <div style={{ marginTop: '8px' }}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        fontSize: '11px',
-                        marginBottom: '4px',
-                      }}
-                    >
-                      <span>Progression</span>
-                      <span>
-                        {mission.progress}/{mission.total}
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        height: '4px',
-                        background: 'var(--border)',
-                        borderRadius: '2px',
-                        overflow: 'hidden',
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: '100%',
-                          width: `${(mission.progress / (mission.total || 1)) * 100}%`,
-                          background: 'var(--accent)',
-                          borderRadius: '2px',
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div>
-                {mission.status === 'completed' && (
-                  <span
-                    style={{
-                      padding: '6px 12px',
-                      background: '#dcfce7',
-                      color: 'var(--success)',
-                      borderRadius: 'var(--radius)',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                    }}
-                  >
-                    ✓ Terminé
-                  </span>
-                )}
-                {mission.status === 'available' && (
-                  <button
-                    className="btn btn-primary"
-                    style={{ padding: '8px 16px', fontSize: '12px' }}
-                  >
-                    Commencer
-                  </button>
-                )}
-                {mission.status === 'in_progress' && (
-                  <button
-                    className="btn btn-secondary"
-                    style={{ padding: '8px 16px', fontSize: '12px' }}
-                  >
-                    Continuer
-                  </button>
-                )}
-              </div>
+      )}
+      {state.status === 'ready' && state.data.missions.length === 0 && (
+        <EmptyState
+          title="Aucune mission ouverte"
+          description="Les nouvelles missions apparaîtront ici avec leur rémunération exacte. Tu recevras une notification."
+          action={{ href: '/dashboard/onboarding/calendar', label: 'Avancer dans le programme' }}
+        />
+      )}
+      {state.status === 'ready' && state.data.missions.length > 0 && (
+        <>
+          {!state.data.isMember && (
+            <div className="mb-6">
+              <FormAlert tone="error">
+                Les missions sont réservées aux adhérents.{' '}
+                <Link href="/dashboard/wallet" className="underline">
+                  Activer mon adhésion
+                </Link>
+              </FormAlert>
             </div>
-          </div>
-        ))}
-      </div>
+          )}
+          <ul className="grid gap-6 lg:grid-cols-2">
+            {state.data.missions.map((mission) => {
+              const submission = state.data.submissions.find((s) => s.missionId === mission.id);
+              return (
+                <li key={mission.id} className="card">
+                  <p className="badge badge-acid">{formatFcfa(mission.reward)}</p>
+                  <h2 className="mt-3 text-2xl">{mission.title}</h2>
+                  <p className="mt-2 whitespace-pre-line text-ink-70">{mission.description}</p>
+                  {submission ? (
+                    <p className="mt-4 border-3 border-ink px-3 py-2 font-semibold">
+                      {STATUS_LABEL[submission.status]}
+                      {submission.note && (
+                        <span className="block text-sm font-normal text-ink-70">
+                          Motif : {submission.note}
+                        </span>
+                      )}
+                    </p>
+                  ) : state.data.isMember ? (
+                    <SubmitProof mission={mission} onSent={reload} />
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

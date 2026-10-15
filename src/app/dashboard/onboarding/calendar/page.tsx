@@ -7,16 +7,15 @@ import {
   useCompletedDays,
   useCompletionDates,
   computeStreak,
-  syncFromSupabase,
-  isSupabaseProgressEnabled,
+  syncFromServer,
   isDayUnlocked,
 } from '@/lib/curriculum-progress';
 
 /**
  * Calendrier du programme 20 jours.
  *
- * Progression : dual-mode via src/lib/curriculum-progress.ts —
- * localStorage en démo, table `program_progress` (RLS) en production.
+ * Progression : src/lib/curriculum-progress.ts → /api/program-progress
+ * (table `program_progress`, filtrée par la session côté serveur).
  * Le streak (jours consécutifs) est calculé depuis les dates de complétion.
  *
  * Verrouillage séquentiel : le jour N est ouvert seulement si le jour N-1
@@ -35,11 +34,9 @@ export default function CalendarPage() {
   const dates = useCompletionDates();
   const [openDay, setOpenDay] = useState<number | null>(null);
 
-  // Mode production : recharge la progression distante au montage.
+  // Recharge la progression du compte depuis le serveur au montage.
   useEffect(() => {
-    if (isSupabaseProgressEnabled()) {
-      void syncFromSupabase();
-    }
+    void syncFromServer();
   }, []);
 
   const streak = computeStreak(dates);
@@ -91,7 +88,7 @@ export default function CalendarPage() {
           <p className="eyebrow">Ton rythme</p>
           {streak > 0 ? (
             <p className="mt-1 font-serif text-lg font-bold">
-              🔥 {streak} jour{streak > 1 ? 's' : ''} d&apos;affilée
+              Série : {streak} jour{streak > 1 ? 's' : ''} d&apos;affilée
             </p>
           ) : (
             <p className="mt-1 font-serif text-lg font-bold text-ink-60">
@@ -170,7 +167,7 @@ export default function CalendarPage() {
                       </span>
                     </span>
                     <span className={`badge shrink-0 ${done ? 'bg-ink text-paper' : ''}`}>
-                      {done ? 'Terminé ✓' : unlocked ? 'Disponible' : 'Verrouillé'}
+                      {done ? 'Terminé' : unlocked ? 'Disponible' : 'Verrouillé'}
                     </span>
                   </button>
 

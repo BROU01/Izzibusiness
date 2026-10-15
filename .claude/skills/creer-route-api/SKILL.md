@@ -11,38 +11,44 @@ Référence de référence : `src/app/api/wallet/deposit/route.ts`.
 Structure à respecter à l'identique :
 
 ```ts
-import { NextResponse } from "next/server";
-import { z } from "zod";
-import { createClient } from "@/lib/supabase/server";
+import { z } from 'zod';
+import { ERROR_CODES } from '@/lib/error-codes';
+import { apiData, apiError, internalError, readJson, requireProfile } from '@/lib/api-response';
+import { query } from '@/lib/db';
 
 const schema = z.object({ /* champs stricts, pas de z.any() */ });
 
 export async function POST(request: Request) {
-  // 1. Auth obligatoire — jamais d'endpoint sensible anonyme
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  try {
+    // 1. Session obligatoire (Better Auth) ; 401 / 403 renvoyés tout faits
+    const auth = await requireProfile();
+    if (auth.response) return auth.response;
 
-  // 2. Validation de l'entrée — toujours parser avant d'utiliser
-  const parsed = schema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) {
-    return NextResponse.json({ error: "invalid_payload" }, { status: 400 });
-  }
+    // 2. Validation de l'entrée avant tout usage
+    const parsed = schema.safeParse(await readJson(request));
+    if (!parsed.success) {
+      return apiError(ERROR_CODES.INVALID_PAYLOAD, 'Données invalides.', 400);
+    }
 
-  // 3. Logique métier — règles métier dans src/lib/config.ts, jamais en dur
-  // 4. Réponse typée, jamais de données sensibles (service role, clés, PII)
-  return NextResponse.json({ ok: true, /* data */ }, { status: 200 });
+    // 3. Logique métier : SQL paramétré, toujours filtré par l'utilisateur de la session
+    const rows = await query<{ id: string }>('select id from payments where user_id = $1', [
+      auth.user.id,
+    ]);
+
+    // 4. Réponse { data }, jamais de données sensibles
+    return apiData({ count: rows.length });
+  } catch (error) {
+    return internalError('scope/route', error);
+  }
 }
 ```
 
 ## Règles non-négociables
 
-1. **Auth avant toute écriture** : `getUser()` systématique ; 401 sinon.
+1. **Auth avant toute écriture** : `requireUser()` / `requireProfile()` / `requireAdmin()` ; 401 sinon.
 2. **Validation zod** : `safeParse`, pas de `as` sur `request.json()`.
-3. **Pas de service role route** : `SUPABASE_SERVICE_ROLE_KEY` uniquement pour les tâches admin vérifiées (voir la liste dans `CLAUDE.md`).
-4. **Réponses** : `{ error: string }` avec code en snake_case + status HTTP cohérent (401, 403, 404, 409, 422).
+3. **Pas de RLS** : chaque requête filtre explicitement par `auth.user.id` (ou passe par `requireAdmin()`).
+4. **Réponses** : `{ data }` ou `{ error: { code, message } }` (codes de `src/lib/error-codes.ts`) + status HTTP cohérent (400, 401, 403, 404, 409).
 5. **Logique métier** : constantes (ADHESION_FEE, MIN_WITHDRAWAL…) dans `src/lib/config.ts`.
 6. **GET en lecture seule** ; toute mutation en POST/PATCH/DELETE.
 

@@ -1,99 +1,50 @@
 import { useSyncExternalStore } from 'react';
-import { createBrowserClient } from '@/lib/supabase/client';
-import { isSupabaseConfigured } from '@/lib/demo';
 
 /**
- * Progression du programme 20 jours — DUAL MODE.
+ * Progression du programme 20 jours.
  *
- * Mode démo (Supabase non configuré) : localStorage, clé
- * "izzibusiness-20d-progress" — JSON { [day]: ISO date de complétion }.
- * L'horodatage permet le calcul du streak ; sans backend, c'est le seul
- * stockage possible.
+ * Source de vérité : table `program_progress`, lue et modifiée via
+ * `/api/program-progress` (session vérifiée côté serveur, verrou séquentiel
+ * appliqué en SQL). Ce module garde un cache mémoire partagé par les deux
+ * pages (calendrier et détail d'un jour) pour qu'elles restent synchronisées,
+ * et applique une mise à jour optimiste au clic, réalignée sur la réponse
+ * du serveur.
  *
- * Mode production (Supabase configuré) : table `program_progress`
- * (migration 005) via le client navigateur, protégée par RLS — la
- * progression survit au nettoyage du navigateur et suit le compte.
- *
- * Les deux pages (calendrier et détail d'un jour) partagent ce module
- * pour rester synchronisées.
+ * Pas de persistance localStorage : la progression suit le compte, pas le
+ * navigateur (et ne fuit pas d'un compte à l'autre sur un appareil partagé).
  */
 
-const PROGRESS_KEY = 'izzibusiness-20d-progress';
 const PROGRESS_EVENT = 'izzibusiness-20d-progress-changed';
+const PROGRESS_ENDPOINT = '/api/program-progress';
 const EMPTY_COMPLETED: number[] = [];
 const EMPTY_DATES: Record<number, string> = {};
 
-/** Format stocké : jour -> date ISO de complétion (pour le streak). */
+/** Format en cache : jour -> date ISO de complétion (pour le streak). */
 type ProgressMap = Record<number, string>;
 
 /** Cache module : getSnapshot doit renvoyer une référence stable entre rendus. */
-let cachedMap: ProgressMap | null = null;
+let cachedMap: ProgressMap = EMPTY_DATES;
 let cachedCompleted: number[] | null = null;
-/** Invalidation en attente (écriture Supabase en cours → relecture). */
-let supabaseSync: Promise<void> | null = null;
-
-export function isSupabaseProgressEnabled(): boolean {
-  return isSupabaseConfigured();
-}
+/** Lecture distante en cours (évite les requêtes en double au montage). */
+let pendingSync: Promise<void> | null = null;
 
 // ---------------------------------------------------------------------------
-// Lecture
+// Cache
 // ---------------------------------------------------------------------------
 
-function readLocal(): ProgressMap {
-  try {
-    const raw = window.localStorage.getItem(PROGRESS_KEY);
-    if (!raw) return {};
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      return {};
-    }
-    // Migration du format ancien (array de nombres sans dates).
-    if (Array.isArray(parsed)) return {};
-    const map: ProgressMap = {};
-    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-      const day = Number(key);
-      if (Number.isInteger(day) && day >= 1 && day <= 20 && typeof value === 'string') {
-        map[day] = value;
-      }
-    }
-    return map;
-  } catch {
-    return {};
-  }
-}
-
-/** Ancien format (array de nombres) : converti une fois vers le nouveau. */
-function migrateLegacyArray(): ProgressMap | null {
-  try {
-    const raw = window.localStorage.getItem(PROGRESS_KEY);
-    if (!raw || !raw.trim().startsWith('[')) return null;
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return null;
-    const now = new Date().toISOString();
-    const map: ProgressMap = {};
-    for (const n of parsed) {
-      if (typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 20) {
-        map[n] = now;
-      }
-    }
-    window.localStorage.setItem(PROGRESS_KEY, JSON.stringify(map));
-    return map;
-  } catch {
-    return null;
-  }
+function setCache(map: ProgressMap): void {
+  cachedMap = map;
+  cachedCompleted = null;
+  window.dispatchEvent(new Event(PROGRESS_EVENT));
 }
 
 function getMapSnapshot(): ProgressMap {
-  if (cachedMap === null) {
-    cachedMap = migrateLegacyArray() ?? readLocal();
-  }
   return cachedMap;
 }
 
 function getCompletedSnapshot(): number[] {
   if (cachedCompleted === null) {
-    cachedCompleted = Object.keys(getMapSnapshot())
+    cachedCompleted = Object.keys(cachedMap)
       .map(Number)
       .sort((a, b) => a - b);
   }
@@ -105,25 +56,15 @@ function getServerSnapshot(): number[] {
 }
 
 function subscribe(onChange: () => void): () => void {
-  // Autre onglet : le cache est invalidé avant notification.
-  const onStorage = () => {
-    cachedMap = null;
-    cachedCompleted = null;
-    onChange();
-  };
-  window.addEventListener('storage', onStorage);
   window.addEventListener(PROGRESS_EVENT, onChange);
   return () => {
-    window.removeEventListener('storage', onStorage);
     window.removeEventListener(PROGRESS_EVENT, onChange);
   };
 }
 
 /**
- * Hook : liste des jours complétés, synchronisée entre onglets.
- * En mode Supabase, la lecture distante est déclenchée au premier usage
- * (dans un effet du composant via `syncFromSupabase`) — le hook reste
- * synchroné sur le cache local qui est re-notifié après réponse.
+ * Hook : liste des jours complétés (cache partagé). La lecture distante est
+ * déclenchée au montage des pages via `syncFromServer`.
  */
 export function useCompletedDays(): number[] {
   return useSyncExternalStore(subscribe, getCompletedSnapshot, getServerSnapshot);
@@ -131,95 +72,105 @@ export function useCompletedDays(): number[] {
 
 /** Dates de complétion par jour (pour le streak). */
 export function useCompletionDates(): Record<number, string> {
-  return useSyncExternalStore(
-    subscribe,
-    () => getMapSnapshot(),
-    () => EMPTY_DATES,
-  );
+  return useSyncExternalStore(subscribe, getMapSnapshot, () => EMPTY_DATES);
 }
 
 // ---------------------------------------------------------------------------
-// Sync Supabase (mode production uniquement)
+// Serveur
 // ---------------------------------------------------------------------------
 
+/** Extrait `{ data: { days: [{ day, completedAt }] } }` d'une réponse API. */
+function parseDays(payload: unknown): ProgressMap | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const data = (payload as { data?: unknown }).data;
+  if (typeof data !== 'object' || data === null) return null;
+  const days = (data as { days?: unknown }).days;
+  if (!Array.isArray(days)) return null;
+
+  const map: ProgressMap = {};
+  for (const entry of days) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const { day, completedAt } = entry as { day?: unknown; completedAt?: unknown };
+    if (
+      typeof day === 'number' &&
+      Number.isInteger(day) &&
+      day >= 1 &&
+      day <= 20 &&
+      typeof completedAt === 'string'
+    ) {
+      map[day] = completedAt;
+    }
+  }
+  return map;
+}
+
+async function readProgressResponse(response: Response): Promise<ProgressMap | null> {
+  if (!response.ok) return null;
+  try {
+    return parseDays(await response.json());
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Recharge la progression depuis Supabase dans le cache local.
- * Appelé au montage des pages du programme (mode production).
+ * Recharge la progression depuis le serveur dans le cache partagé.
+ * Appelé au montage des pages du programme.
  */
-export async function syncFromSupabase(): Promise<void> {
-  if (!isSupabaseProgressEnabled() || supabaseSync) return;
+export async function syncFromServer(): Promise<void> {
+  if (pendingSync) return pendingSync;
 
-  supabaseSync = (async () => {
+  pendingSync = (async () => {
     try {
-      const supabase = createBrowserClient();
-      const { data, error } = await supabase.from('program_progress').select('day, completed_at');
-
-      if (error || !data) return;
-
-      const remote: ProgressMap = {};
-      for (const row of data) {
-        if (typeof row.day === 'number' && typeof row.completed_at === 'string') {
-          remote[row.day] = row.completed_at;
-        }
-      }
-
-      // Fusion : le distant fait foi (le local n'est qu'un miroir démo).
-      cachedMap = remote;
-      cachedCompleted = null;
-      window.dispatchEvent(new Event(PROGRESS_EVENT));
+      const response = await fetch(PROGRESS_ENDPOINT, {
+        cache: 'no-store',
+        credentials: 'same-origin',
+      });
+      const remote = await readProgressResponse(response);
+      if (remote) setCache(remote);
     } catch {
-      // Réseau indisponible : on garde le cache local.
+      // Réseau indisponible : on garde le cache courant.
     } finally {
-      supabaseSync = null;
+      pendingSync = null;
     }
   })();
 
-  return supabaseSync;
+  return pendingSync;
 }
 
 /**
- * Marque un jour comme complété (ou le retire), persiste, notifie.
- * Mode démo : localStorage. Mode production : table Supabase + miroir local.
+ * Marque un jour comme complété (ou le retire) : mise à jour optimiste,
+ * puis bascule côté serveur. Le cache est réaligné sur la réponse (ou relu
+ * en cas d'échec, ce qui annule l'état optimiste).
  */
 export async function toggleDayCompleted(day: number): Promise<void> {
-  const current = getMapSnapshot();
-  const isCompleted = day in current;
-
-  // Mise à jour optimiste locale (réponse instantanée, feedback confettis).
+  const current = cachedMap;
   const updated: ProgressMap = { ...current };
-  if (isCompleted) {
+  if (day in current) {
     delete updated[day];
   } else {
     updated[day] = new Date().toISOString();
   }
-  cachedMap = updated;
-  cachedCompleted = null;
-
-  if (!isSupabaseProgressEnabled()) {
-    try {
-      window.localStorage.setItem(PROGRESS_KEY, JSON.stringify(updated));
-    } catch {
-      // Stockage indisponible (navigation privée) : acceptable en démo.
-    }
-    window.dispatchEvent(new Event(PROGRESS_EVENT));
-    return;
-  }
-
-  window.dispatchEvent(new Event(PROGRESS_EVENT));
+  setCache(updated);
 
   try {
-    const supabase = createBrowserClient();
-    if (isCompleted) {
-      await supabase.from('program_progress').delete().eq('day', day);
-    } else {
-      await supabase
-        .from('program_progress')
-        .upsert({ day, completed_at: updated[day] }, { onConflict: 'day' });
+    const response = await fetch(PROGRESS_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ day }),
+    });
+    const remote = await readProgressResponse(response);
+    if (remote) {
+      setCache(remote);
+      return;
     }
   } catch {
-    // Échec réseau : le miroir local garde l'état optimiste ; la prochaine
-    // syncFromSupabase réalignera. Pas de blocage de l'UI pour autant.
+    // Échec réseau : relecture ci-dessous.
   }
+  // Refus (jour verrouillé, session expirée) ou réseau : on se réaligne.
+  setCache(current);
+  await syncFromServer();
 }
 
 // ---------------------------------------------------------------------------

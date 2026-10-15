@@ -3,10 +3,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import CourseImage from '@/components/CourseImage';
-import { useAuth } from '@/hooks/useAuth';
+import { useSession } from '@/hooks/useSession';
 import { useRouter } from 'next/navigation';
 import { formatFcfa, ADHESION_FEE } from '@/lib/config';
-import { createBrowserClient } from '@/lib/supabase/client';
 
 type Course = {
   slug: string;
@@ -20,16 +19,10 @@ type Course = {
 };
 
 export default function FormationsPage() {
-  const { user } = useAuth();
+  const { user } = useSession();
   const router = useRouter();
-  const [selected, setSelected] = useState<string | null>(null);
-  const [paymentStep, setPaymentStep] = useState<
-    'idle' | 'phone' | 'processing' | 'success' | 'error'
-  >('idle');
-  const [phone, setPhone] = useState('');
 
   const [showAll, setShowAll] = useState(false);
-  const [isFormOpen, setIsFormOpen] = useState(false);
   const [formData, setFormData] = useState({
     nomComplet: '',
     contact: '',
@@ -48,10 +41,17 @@ export default function FormationsPage() {
 
     async function loadCourses() {
       try {
-        const supabase = createBrowserClient();
-        const { data, error } = await supabase.from('courses').select('*');
-        if (error || cancelled || !Array.isArray(data)) return;
-        const rows = data as Array<Record<string, unknown>>;
+        // Catalogue réservé aux comptes connectés : un visiteur (401) garde
+        // les formations hardcodées ci-dessous.
+        const response = await fetch('/api/courses', { cache: 'no-store' });
+        if (!response.ok || cancelled) return;
+        const payload: unknown = await response.json();
+        const list =
+          typeof payload === 'object' && payload !== null
+            ? (payload as { data?: { courses?: unknown } }).data?.courses
+            : undefined;
+        if (cancelled || !Array.isArray(list)) return;
+        const rows = list as Array<Record<string, unknown>>;
         setCourses(
           rows
             .filter((row) => typeof row.slug === 'string' && typeof row.title === 'string')
@@ -59,15 +59,15 @@ export default function FormationsPage() {
               slug: String(row.slug),
               title: String(row.title),
               description: typeof row.description === 'string' ? row.description : '',
-              duration_weeks: typeof row.duration_weeks === 'number' ? row.duration_weeks : 1,
-              price_fcfa: typeof row.price_fcfa === 'number' ? row.price_fcfa : 0,
+              duration_weeks: typeof row.durationWeeks === 'number' ? row.durationWeeks : 1,
+              price_fcfa: typeof row.priceFcfa === 'number' ? row.priceFcfa : 0,
               level: typeof row.level === 'string' ? row.level : 'debutant',
               category: typeof row.category === 'string' ? row.category : '',
-              image_url: typeof row.image_url === 'string' ? row.image_url : null,
+              image_url: typeof row.imageUrl === 'string' ? row.imageUrl : null,
             })),
         );
       } catch {
-        // Table absente ou réseau indisponible : on garde les formations hardcodées.
+        // Réseau indisponible : on garde les formations hardcodées.
       }
     }
 
@@ -313,128 +313,10 @@ export default function FormationsPage() {
 
   const visibleFormations = showAll ? allFormations : allFormations.slice(0, 6);
 
-  async function handleMobilePayment() {
-    const btn = document.getElementById('pay-btn') as HTMLButtonElement | null;
-    const errorDiv = document.getElementById('payment-error');
-    const successDiv = document.getElementById('payment-success');
-
-    const resetBtn = () => {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = `Payer ${formatFcfa(ADHESION_FEE)}`;
-      }
-    };
-
-    const showError = (message: string) => {
-      if (errorDiv) {
-        errorDiv.textContent = message;
-        errorDiv.classList.remove('hidden');
-      }
-      if (successDiv) successDiv.classList.add('hidden');
-      resetBtn();
-      setPaymentStep('error');
-      setErrorMsg(message);
-    };
-
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = 'Traitement...';
-    }
-    if (errorDiv) errorDiv.classList.add('hidden');
-    if (successDiv) successDiv.classList.add('hidden');
-    setPaymentStep('processing');
-    setErrorMsg('');
-
-    try {
-      const response = await fetch('/api/payment/kkiapay', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone,
-          amount: ADHESION_FEE,
-          paymentMethod: formData.paiement,
-        }),
-      });
-
-      const data = (await response.json()) as {
-        widgetConfig?: Record<string, unknown>;
-        error?: string;
-      };
-
-      if (!response.ok || !data.widgetConfig) {
-        showError(data.error || 'Paiement indisponible. Réessayez plus tard.');
-        return;
-      }
-
-      if (!document.getElementById('kkiapay-script')) {
-        const script = document.createElement('script');
-        script.id = 'kkiapay-script';
-        script.src = 'https://cdn.kkiapay.me/k.js';
-        script.async = true;
-        document.body.appendChild(script);
-        await new Promise<void>((resolve, reject) => {
-          script.onload = () => resolve();
-          script.onerror = () => reject(new Error('Script Kkiapay introuvable'));
-        });
-      }
-
-      const kkiapay = window as unknown as {
-        openKkiapayWidget: (config: Record<string, unknown>) => void;
-        addSuccessListener: (cb: () => void) => void;
-        addFailureListener: (cb: () => void) => void;
-      };
-
-      let settled = false;
-
-      kkiapay.addSuccessListener(() => {
-        if (settled) return;
-        settled = true;
-        if (successDiv) successDiv.classList.remove('hidden');
-        if (btn) btn.textContent = 'Paiement confirmé !';
-        setPaymentStep('success');
-        setTimeout(() => {
-          setIsFormOpen(true);
-        }, 2000);
-      });
-
-      kkiapay.addFailureListener(() => {
-        if (settled) return;
-        settled = true;
-        showError('Paiement échoué. Vérifiez votre solde.');
-      });
-
-      kkiapay.openKkiapayWidget(data.widgetConfig);
-    } catch {
-      showError('Erreur de connexion. Réessayez.');
-    }
-  }
-
-  function registerCourse() {
-    if (formData.formation) {
-      const found = allFormations.find((f) => f.id === formData.formation);
-      if (found) {
-        setSelected(found.id);
-        openPayment(found.id);
-      }
-    }
-  }
-
-  const openPayment = (id: string | null) => {
-    if (!user) {
-      router.push('/register?redirect=/formations');
-      return;
-    }
-    setSelected(id);
-    setPaymentStep('idle');
-    setPhone('');
-    setErrorMsg('');
-    document.body.style.overflow = 'hidden';
-  };
-
-  const closePayment = () => {
-    setPaymentStep('idle');
-    setSelected(null);
-    document.body.style.overflow = '';
+  // L'accès aux formations passe par l'adhésion, réglée depuis le wallet
+  // (PayDunya ou solde).
+  const goToMembership = () => {
+    router.push(user ? '/dashboard/wallet' : '/login?redirect=/dashboard/wallet');
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -443,18 +325,33 @@ export default function FormationsPage() {
     setFormMessage('');
 
     try {
-      const supabase = createBrowserClient();
-      const { error } = await supabase.from('course_registrations').insert({
-        user_id: user?.id ?? null,
-        full_name: formData.nomComplet,
-        phone: formData.contact,
-        goal: formData.objectif,
-        level: formData.niveau,
-        formation: formData.formation,
-        payment_method: formData.paiement,
+      const response = await fetch('/api/courses/registrations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: formData.nomComplet,
+          phone: formData.contact,
+          goal: formData.objectif,
+          level: formData.niveau,
+          formation: formData.formation,
+          paymentMethod: formData.paiement,
+        }),
       });
 
-      if (error) throw error;
+      if (!response.ok) {
+        const payload: unknown = await response.json().catch(() => null);
+        const message =
+          typeof payload === 'object' && payload !== null
+            ? (payload as { error?: { message?: unknown } }).error?.message
+            : undefined;
+        setFormStatus('error');
+        setFormMessage(
+          typeof message === 'string' && message
+            ? message
+            : "Erreur lors de l'envoi. Réessayez ou contactez-nous sur WhatsApp.",
+        );
+        return;
+      }
 
       setFormStatus('success');
       setFormMessage(
@@ -468,7 +365,6 @@ export default function FormationsPage() {
         formation: '',
         paiement: 'orange',
       });
-      setIsFormOpen(false);
     } catch {
       setFormStatus('error');
       setFormMessage("Erreur lors de l'envoi. Réessayez ou contactez-nous sur WhatsApp.");
@@ -519,12 +415,12 @@ export default function FormationsPage() {
               </p>
 
               <div className="mt-7 flex flex-wrap gap-3">
-                <button onClick={() => openPayment(null)} className="btn btn-primary">
+                <button onClick={goToMembership} className="btn btn-primary">
                   Voir ce que contient l&apos;adhésion
                 </button>
-                <button onClick={() => setIsFormOpen(true)} className="btn btn-secondary">
+                <a href="#inscription-formation" className="btn btn-secondary">
                   S&apos;inscrire gratuitement
-                </button>
+                </a>
               </div>
               <p className="mt-3 font-mono text-xs" style={{ color: 'var(--ink-70)' }}>
                 Aucun paiement n&apos;est déclenché à cette étape · Tu verras le détail avant de
@@ -571,10 +467,10 @@ export default function FormationsPage() {
                 <h2 className="heading-lg mt-2">Nos formations</h2>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button onClick={() => setIsFormOpen(true)} className="btn btn-primary">
+                <a href="#inscription-formation" className="btn btn-primary">
                   S&apos;inscrire à une formation
-                </button>
-                <button onClick={() => openPayment(null)} className="btn btn-secondary">
+                </a>
+                <button onClick={goToMembership} className="btn btn-secondary">
                   Adhérer — {formatFcfa(ADHESION_FEE)}
                 </button>
               </div>
@@ -632,10 +528,7 @@ export default function FormationsPage() {
                       </span>
                     </div>
 
-                    <button
-                      onClick={() => openPayment(f.id)}
-                      className="btn btn-primary w-full mt-4"
-                    >
+                    <button onClick={goToMembership} className="btn btn-primary w-full mt-4">
                       Adhérer et suivre cette formation
                     </button>
                   </div>
@@ -669,7 +562,7 @@ export default function FormationsPage() {
               Un seul paiement — {formatFcfa(ADHESION_FEE)} — accès à vie à toutes les formations
             </p>
             <button
-              onClick={() => openPayment(null)}
+              onClick={goToMembership}
               className="btn btn-primary mt-6"
               style={{ background: 'var(--acid)', color: 'var(--ink)' }}
             >
@@ -682,7 +575,7 @@ export default function FormationsPage() {
         </section>
 
         {/* ═══ 03 — INSCRIPTION ═══ */}
-        <section className="section">
+        <section id="inscription-formation" className="section">
           <div className="container grid gap-10 md:grid-cols-[1fr_1.2fr]">
             <div>
               <p className="eyebrow">[ 03 ] INSCRIPTION</p>
@@ -709,10 +602,10 @@ export default function FormationsPage() {
                 </p>
                 <div className="rule my-4" />
                 <ul className="space-y-2 text-[13px]">
-                  <li>✓ 18 formations professionnelles</li>
-                  <li>✓ Accès aux missions payées</li>
-                  <li>✓ Communauté privée</li>
-                  <li>✓ Certificats de réussite</li>
+                  <li>18 formations professionnelles</li>
+                  <li>Accès aux missions payées</li>
+                  <li>Communauté privée</li>
+                  <li>Certificats de réussite</li>
                 </ul>
               </div>
             </div>
@@ -858,7 +751,7 @@ export default function FormationsPage() {
             </h2>
             <div className="mt-7 flex flex-wrap justify-center gap-3">
               <button
-                onClick={() => openPayment(null)}
+                onClick={goToMembership}
                 className="btn btn-primary"
                 style={{ background: 'var(--acid)', color: 'var(--ink)' }}
               >
@@ -875,92 +768,6 @@ export default function FormationsPage() {
           </div>
         </section>
       </main>
-
-      {/* ═══ MODAL PAIEMENT ═══ */}
-      {selected !== null && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(20,18,13,0.9)' }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closePayment();
-          }}
-        >
-          <div className="w-full max-w-md">
-            <div className="card">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="eyebrow">[ PAIEMENT ]</p>
-                  <p className="mt-1 text-[11px]" style={{ color: 'var(--ink-70)' }}>
-                    Abonnement IZIBUSINESS
-                  </p>
-                </div>
-                <button
-                  onClick={closePayment}
-                  className="btn btn-secondary px-3 py-1.5"
-                  aria-label="Fermer"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="rule mb-4" />
-
-              <div className="mb-4 flex items-baseline justify-between">
-                <span className="text-[11px] uppercase" style={{ color: 'var(--ink-70)' }}>
-                  Montant
-                </span>
-                <span
-                  className="text-3xl font-semibold"
-                  style={{ fontFamily: 'var(--font-display)' }}
-                >
-                  {formatFcfa(ADHESION_FEE)}
-                </span>
-              </div>
-
-              <label className="grid gap-1.5 mb-4">
-                <span className="text-[11px] font-medium uppercase">Votre numéro</span>
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="input"
-                  placeholder="07 XX XX XX XX"
-                />
-              </label>
-
-              <button
-                id="pay-btn"
-                onClick={handleMobilePayment}
-                disabled={paymentStep === 'processing'}
-                className="btn btn-primary w-full"
-              >
-                {paymentStep === 'processing'
-                  ? 'Traitement...'
-                  : `Payer ${formatFcfa(ADHESION_FEE)}`}
-              </button>
-
-              <div
-                id="payment-error"
-                className="hidden mt-3 border-[3px] p-3 text-[13px]"
-                style={{ borderColor: 'var(--flame)', color: 'var(--flame)' }}
-              />
-              <div
-                id="payment-success"
-                className="hidden mt-3 border-[3px] p-3 text-[13px]"
-                style={{ borderColor: 'var(--grass)', color: 'var(--grass)' }}
-              >
-                Paiement confirmé ! Redirection vers le formulaire...
-              </div>
-
-              <div className="rule my-4" />
-              <p className="text-[11px] leading-relaxed" style={{ color: 'var(--ink-70)' }}>
-                Paiement sécurisé via Orange Money, MTN MoMo, Moov Money ou Wave. Vous recevrez une
-                demande de confirmation sur votre téléphone.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

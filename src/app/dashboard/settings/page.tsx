@@ -130,7 +130,6 @@ export default function SettingsPage() {
                       flex: 1,
                       padding: '10px',
                       border: `2px solid ${settings.theme === theme.id ? 'var(--accent)' : 'var(--border)'}`,
-                      borderRadius: 'var(--radius)',
                       background:
                         settings.theme === theme.id ? 'var(--accent-light)' : 'var(--bg-card)',
                       cursor: 'pointer',

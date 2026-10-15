@@ -3,19 +3,31 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
+import { useSession } from '@/hooks/useSession';
 
-const NAV_ITEMS = [
-  { href: '/formations', label: 'Formation' },
+/** Visiteur : on reste sur l'accueil (sections ancrées). */
+const PUBLIC_ITEMS = [
+  { href: '/#services', label: 'Services' },
+  { href: '/#comment-ca-marche', label: 'Comment ça marche' },
+  { href: '/#faq', label: 'FAQ' },
+  { href: '/contact', label: 'Contact' },
+];
+
+/** Membre connecté : accès direct aux fonctionnalités. */
+const MEMBER_ITEMS = [
+  { href: '/formations', label: 'Formations' },
   { href: '/dashboard/missions', label: 'Missions' },
   { href: '/games', label: 'Jeux' },
-  { href: '/market', label: 'Marketplace' },
-  { href: '/dashboard/referrals', label: 'Affiliation' },
-  { href: '/leaderboard', label: 'Classement' },
+  { href: '/market', label: 'Marché' },
+  { href: '/dashboard/referrals', label: 'Parrainage' },
 ];
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const pathname = usePathname();
+  const session = useSession();
+  const signedIn = session.status === 'authenticated';
+  const NAV_ITEMS = signedIn ? MEMBER_ITEMS : PUBLIC_ITEMS;
   const isActive = (href: string) =>
     pathname === href || (href !== '/' && pathname.startsWith(href + '/'));
 
@@ -46,16 +58,24 @@ export default function Navbar() {
         </div>
 
         <div className="hidden lg:flex items-center gap-2">
-          <Link
-            href="/login"
-            className="btn btn-secondary"
-            aria-current={isActive('/login') ? 'page' : undefined}
-          >
-            Connexion
-          </Link>
-          <Link href="/register" className="btn btn-primary">
-            Commencer
-          </Link>
+          {signedIn ? (
+            <Link href="/dashboard" className="btn btn-primary">
+              Mon espace
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="btn btn-secondary"
+                aria-current={isActive('/login') ? 'page' : undefined}
+              >
+                Connexion
+              </Link>
+              <Link href="/register" className="btn btn-primary">
+                Créer un compte
+              </Link>
+            </>
+          )}
         </div>
 
         <button
@@ -65,7 +85,7 @@ export default function Navbar() {
           aria-expanded={isOpen}
           aria-controls="mobile-menu"
         >
-          {isOpen ? '[ X ]' : '[ MENU ]'}
+          {isOpen ? 'Fermer' : 'Menu'}
         </button>
       </div>
 
@@ -90,20 +110,32 @@ export default function Navbar() {
             </Link>
           ))}
           <div className="flex gap-2 pt-2 border-t-3 border-ink mt-2">
-            <Link
-              href="/login"
-              onClick={() => setIsOpen(false)}
-              className="btn btn-secondary flex-1 justify-center"
-            >
-              Connexion
-            </Link>
-            <Link
-              href="/register"
-              onClick={() => setIsOpen(false)}
-              className="btn btn-primary flex-1 justify-center"
-            >
-              Commencer
-            </Link>
+            {signedIn ? (
+              <Link
+                href="/dashboard"
+                onClick={() => setIsOpen(false)}
+                className="btn btn-primary flex-1 justify-center"
+              >
+                Mon espace
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  onClick={() => setIsOpen(false)}
+                  className="btn btn-secondary flex-1 justify-center"
+                >
+                  Connexion
+                </Link>
+                <Link
+                  href="/register"
+                  onClick={() => setIsOpen(false)}
+                  className="btn btn-primary flex-1 justify-center"
+                >
+                  Créer un compte
+                </Link>
+              </>
+            )}
           </div>
         </div>
       )}

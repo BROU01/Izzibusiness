@@ -2,31 +2,38 @@
 description: Règles obligatoires pour tout flux de paiement, dépôt ou retrait
 globs:
   - 'src/app/api/**/route.ts'
-  - 'src/lib/kkiapay.ts'
-  - 'src/lib/beem.ts'
-  - 'src/lib/pawapay.ts'
+  - 'src/lib/paydunya.ts'
+  - 'src/lib/payments/**'
+  - 'src/lib/games/**'
 alwaysApply: false
 ---
 
 # Paiements
 
-## Providers
+## Provider : PayDunya
 
-| Provider | Usage                       | Fichiers                                             |
-| -------- | --------------------------- | ---------------------------------------------------- |
-| Kkiapay  | Dépôts carte / mobile money | `src/lib/kkiapay.ts`, `src/app/api/kkiapay/*`        |
-| Beem     | Dépôts mobile money (Bénin) | `src/lib/beem.ts`, `src/app/api/wallet/beem/*`       |
-| PawaPay  | Retraits mobile money       | `src/lib/pawapay.ts`, `src/app/api/wallet/pawapay/*` |
+| Usage                           | Fichiers                                                                       |
+| ------------------------------- | ------------------------------------------------------------------------------ |
+| Client API (factures, débours.) | `src/lib/paydunya.ts`                                                          |
+| Dépôt / adhésion (facture)      | `src/lib/payments/checkout.ts`, `src/app/api/wallet/deposit`, `api/membership` |
+| IPN (notification de paiement)  | `src/app/api/payment/paydunya/ipn/route.ts`, `src/lib/payments/sync.ts`        |
+| Retraits (déboursement)         | `src/lib/payments/withdrawals.ts`, `src/app/api/admin/withdrawals/[id]`        |
+| Mise en place                   | `docs/paydunya.md`                                                             |
 
 ## Règles
 
-1. Vérifier la signature côté serveur avant tout crédit (voir `POST /api/kkiapay/verify`).
-2. Toute transaction doit être idempotente : une clé unique (`reference` ou `transaction_id`)
-   empêche le double crédit.
-3. Le solde se met à jour dans une transaction SQL (`supabase.rpc` ou
-   `update ... where` atomique), jamais par lecture puis écriture séparée.
-4. Respecter `src/lib/config.ts` : `DEPOSIT_FEE_RATE`, `MIN_DEPOSIT`,
-   `MIN_WITHDRAWAL`, `WITHDRAWAL_FEE_RATE`.
-5. Aucune clé privée dans le client : `KKIAPAY_PRIVATE_KEY`, `KKIAPAY_SECRET_KEY`,
-   `BEEM_API_KEY`, `BEEM_SECRET_KEY`, `PAWAPAY_API_TOKEN` restent côté serveur.
-6. Réponses d'erreur via le pattern maison `{ success: false, message }` + code HTTP approprié, jamais de stack trace (voir `src/app/api/wallet/deposit/route.ts`).
+1. Ne jamais créditer sur la seule foi d'une notification : vérifier le `hash` IPN
+   (SHA-512 de la MasterKey, comparaison en temps constant) PUIS relire la facture
+   chez PayDunya (`confirmInvoice`) et comparer le montant.
+2. Idempotence : `transactions.reference_id` est unique ; chaque crédit porte une
+   référence (`pd:<token>`, `win:<round>`, `wd-refund:<id>`…).
+3. Tout mouvement de solde passe par une fonction SQL atomique appelée depuis le
+   serveur (`db/migrations/001_schema.sql`), jamais par lecture puis écriture.
+4. Respecter `src/lib/config.ts` : `MIN_DEPOSIT`, `MAX_DEPOSIT`, `MIN_WITHDRAWAL`,
+   `WITHDRAWAL_FEE_RATE`, `ADHESION_FEE`, `MIN_BET`, `MAX_BET`, `GAME_RTP`.
+5. Aucune clé dans le client : `PAYDUNYA_MASTER_KEY`, `PAYDUNYA_PRIVATE_KEY`,
+   `PAYDUNYA_TOKEN`, `DATABASE_URL`, `BETTER_AUTH_SECRET` restent côté serveur.
+6. Réponses d'erreur `{ error: { code, message } }` (`src/lib/api-response.ts`),
+   jamais de stack trace.
+7. Jeux : le résultat est toujours tiré côté serveur ; le client n'envoie jamais un
+   montant de gain.

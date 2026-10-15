@@ -32,7 +32,6 @@ export default function ProfilePage() {
             style={{
               width: '80px',
               height: '80px',
-              borderRadius: '50%',
               background: 'var(--accent)',
               color: 'white',
               display: 'flex',
@@ -51,8 +50,8 @@ export default function ProfilePage() {
             <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{formData.email}</p>
             <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
               <span className="badge">Membre</span>
-              <span className="badge" style={{ background: '#dcfce7', color: 'var(--success)' }}>
-                Vérifié ✓
+              <span className="badge" style={{ background: '#d6f5e8', color: 'var(--success)' }}>
+                Vérifié
               </span>
             </div>
           </div>
@@ -65,7 +64,6 @@ export default function ProfilePage() {
             gap: '24px',
             padding: '16px',
             background: 'var(--bg-secondary)',
-            borderRadius: 'var(--radius)',
           }}
         >
           <div style={{ flex: 1, textAlign: 'center' }}>
@@ -155,13 +153,12 @@ export default function ProfilePage() {
             <div
               style={{
                 padding: '10px 12px',
-                background: '#dcfce7',
+                background: '#d6f5e8',
                 color: 'var(--success)',
-                borderRadius: 'var(--radius)',
                 fontSize: '13px',
               }}
             >
-              ✓ Profil sauvegardé avec succès!
+              Profil enregistré.
             </div>
           )}
 

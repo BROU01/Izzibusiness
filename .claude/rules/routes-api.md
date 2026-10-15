@@ -13,7 +13,7 @@ Une route suit ce schéma :
 
 1. Méthodes HTTP nommées explicitement (`GET`, `POST`, `PUT`, `DELETE`) en export
    nommé — jamais `export default`.
-2. Auth vérifiée en premier (`supabase.auth.getUser()`), sauf route publique
+2. Auth vérifiée en premier (`requireUser()` / `requireProfile()` / `requireAdmin()`), sauf route publique
    justifiée (webhooks : vérification de signature à la place).
 3. Validation du body (zod ou vérification manuelle typée).
 4. Traitement métier avec les librairies de `src/lib/`.

@@ -1,220 +1,117 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
-import { getDemoUserByPhone, demoUnauthorized } from '@/lib/demo-auth';
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { ERROR_CODES } from '@/lib/error-codes';
+import { apiError, internalError, readJson, requireUser } from '@/lib/api-response';
+import { query, queryOne } from '@/lib/db';
 
-// GET - Recuperer les notifications
-export async function GET(request: NextRequest) {
-  // ── Mode démo ────────────────────────────────────────────────────────
-  const demoPhone = new URL(request.url).searchParams.get('phone');
-  const demoUser = await getDemoUserByPhone(demoPhone);
-  if (demoUser) {
-    const unreadCount = demoUser.notifications.filter((n) => !n.read).length;
-    return NextResponse.json({
-      success: true,
-      notifications: demoUser.notifications,
-      unreadCount,
-      demoMode: true,
-    });
-  }
+interface NotificationRow {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  read: boolean;
+  action_url: string | null;
+  created_at: Date;
+}
 
+const listSchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  unread: z.enum(['true', 'false']).optional(),
+});
+
+const updateSchema = z.union([
+  z.object({ markAllRead: z.literal(true) }),
+  z.object({ notificationId: z.uuid() }),
+]);
+
+// GET - Notifications de l'utilisateur connecté.
+export async function GET(request: Request) {
   try {
-    const supabase = createServerClient();
+    const auth = await requireUser();
+    if (auth.response) return auth.response;
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return demoUnauthorized();
+    const parsed = listSchema.safeParse(Object.fromEntries(new URL(request.url).searchParams));
+    if (!parsed.success) {
+      return apiError(ERROR_CODES.INVALID_PAYLOAD, 'Paramètres invalides.', 400);
     }
 
-    const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get('limit') || '20');
-    const unreadOnly = searchParams.get('unread') === 'true';
-
-    let query = supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (unreadOnly) {
-      query = query.eq('read', false);
-    }
-
-    const { data: notifications, error } = await query;
-
-    if (error) {
-      console.error('Error fetching notifications:', error);
-      return NextResponse.json(
-        { success: false, message: 'Erreur lors de la recuperation' },
-        { status: 500 },
-      );
-    }
-
-    // Compter les non-lues
-    const { count: unreadCount } = await supabase
-      .from('notifications')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-      .eq('read', false);
+    const [rows, unread] = await Promise.all([
+      query<NotificationRow>(
+        `select id, title, message, type, read, action_url, created_at
+           from notifications
+          where user_id = $1 and ($2::boolean is false or read = false)
+          order by created_at desc
+          limit $3`,
+        [auth.user.id, parsed.data.unread === 'true', parsed.data.limit],
+      ),
+      queryOne<{ count: number }>(
+        'select count(*)::int as count from notifications where user_id = $1 and read = false',
+        [auth.user.id],
+      ),
+    ]);
 
     return NextResponse.json({
       success: true,
-      notifications: (notifications || []).map((n) => ({
+      notifications: rows.map((n) => ({
         id: n.id,
         title: n.title,
         message: n.message,
         type: n.type,
         read: n.read,
         actionUrl: n.action_url,
-        createdAt: n.created_at,
+        createdAt: n.created_at.toISOString(),
       })),
-      unreadCount: unreadCount || 0,
+      unreadCount: unread?.count ?? 0,
     });
   } catch (error) {
-    console.error('Notifications GET error:', error);
-    return NextResponse.json(
-      { success: false, message: 'Erreur interne du serveur' },
-      { status: 500 },
-    );
+    return internalError('notifications GET', error);
   }
 }
 
-// PUT - Marquer comme lu
-export async function PUT(request: NextRequest) {
+// PUT - Marquer une notification (ou toutes) comme lue(s).
+export async function PUT(request: Request) {
   try {
-    const body = await request.json();
-    const { notificationId, markAllRead, phone } = body;
+    const auth = await requireUser();
+    if (auth.response) return auth.response;
 
-    // ── Mode démo ──────────────────────────────────────────────────────
-    const demoUser = await getDemoUserByPhone(phone);
-    if (demoUser) {
-      if (markAllRead) {
-        demoUser.notifications.forEach((n) => (n.read = true));
-      } else if (notificationId) {
-        const notif = demoUser.notifications.find((n) => n.id === notificationId);
-        if (notif) notif.read = true;
-      }
-      return NextResponse.json({ success: true, demoMode: true });
+    const parsed = updateSchema.safeParse(await readJson(request));
+    if (!parsed.success) {
+      return apiError(ERROR_CODES.INVALID_PAYLOAD, 'notificationId ou markAllRead requis.', 400);
     }
 
-    // ── Mode production ────────────────────────────────────────────────
-    const supabase = createServerClient();
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return demoUnauthorized();
+    if ('notificationId' in parsed.data) {
+      await query('update notifications set read = true where id = $1 and user_id = $2', [
+        parsed.data.notificationId,
+        auth.user.id,
+      ]);
+    } else {
+      await query('update notifications set read = true where user_id = $1 and read = false', [
+        auth.user.id,
+      ]);
     }
-
-    if (markAllRead) {
-      const { error } = await supabase
-        .from('notifications')
-        .update({ read: true })
-        .eq('user_id', user.id)
-        .eq('read', false);
-
-      if (error) {
-        return NextResponse.json(
-          { success: false, message: 'Erreur lors de la mise a jour' },
-          { status: 500 },
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: 'Toutes les notifications marquees comme lues',
-      });
-    }
-
-    if (notificationId) {
-      const { error } = await supabase
-        .from('notifications')
-        .update({ read: true })
-        .eq('id', notificationId)
-        .eq('user_id', user.id);
-
-      if (error) {
-        return NextResponse.json(
-          { success: false, message: 'Erreur lors de la mise a jour' },
-          { status: 500 },
-        );
-      }
-
-      return NextResponse.json({ success: true, message: 'Notification marquee comme lue' });
-    }
-
-    return NextResponse.json(
-      { success: false, message: 'notificationId ou markAllRead requis' },
-      { status: 400 },
-    );
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Notifications PUT error:', error);
-    return NextResponse.json(
-      { success: false, message: 'Erreur interne du serveur' },
-      { status: 500 },
-    );
+    return internalError('notifications PUT', error);
   }
 }
 
-// DELETE - Supprimer une notification
-export async function DELETE(request: NextRequest) {
+// DELETE - Supprimer une notification.
+export async function DELETE(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const notificationId = searchParams.get('id');
-    const demoPhone = searchParams.get('phone');
+    const auth = await requireUser();
+    if (auth.response) return auth.response;
 
-    // ── Mode démo ──────────────────────────────────────────────────────
-    const demoUser = await getDemoUserByPhone(demoPhone);
-    if (demoUser) {
-      demoUser.notifications = demoUser.notifications.filter((n) => n.id !== notificationId);
-      return NextResponse.json({ success: true, demoMode: true });
+    const id = z.uuid().safeParse(new URL(request.url).searchParams.get('id'));
+    if (!id.success) {
+      return apiError(ERROR_CODES.INVALID_PAYLOAD, 'Identifiant de notification invalide.', 400);
     }
 
-    // ── Mode production ────────────────────────────────────────────────
-    const supabase = createServerClient();
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return demoUnauthorized();
-    }
-
-    if (!notificationId) {
-      return NextResponse.json(
-        { success: false, message: 'ID de notification requis' },
-        { status: 400 },
-      );
-    }
-
-    const { error } = await supabase
-      .from('notifications')
-      .delete()
-      .eq('id', notificationId)
-      .eq('user_id', user.id);
-
-    if (error) {
-      return NextResponse.json(
-        { success: false, message: 'Erreur lors de la suppression' },
-        { status: 500 },
-      );
-    }
-
-    return NextResponse.json({ success: true, message: 'Notification supprimee' });
+    await query('delete from notifications where id = $1 and user_id = $2', [
+      id.data,
+      auth.user.id,
+    ]);
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Notifications DELETE error:', error);
-    return NextResponse.json(
-      { success: false, message: 'Erreur interne du serveur' },
-      { status: 500 },
-    );
+    return internalError('notifications DELETE', error);
   }
 }

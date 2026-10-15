@@ -120,7 +120,7 @@ export default function ContactPage() {
               {status === 'success' ? (
                 /* ===== État succès ===== */
                 <div className="card mt-8 bg-paper p-6" role="status" aria-live="polite">
-                  <p className="badge badge-grass">Envoyé ✓</p>
+                  <p className="badge badge-grass">Envoyé</p>
                   <h2 className="mt-4 font-serif text-2xl font-bold">
                     Merci {sentName}, ton message est parti.
                   </h2>

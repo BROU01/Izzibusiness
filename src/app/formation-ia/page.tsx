@@ -80,17 +80,14 @@ const formatSteps = [
 
 const trustModules = [
   {
-    icon: 'PRIX',
     title: "Incluse dans l'adhésion",
     desc: `Le module est accessible avec l'adhésion unique — ${formatFcfa(ADHESION_FEE)} —, affichée avant toute confirmation. Aucun frais caché.`,
   },
   {
-    icon: 'HOLO',
     title: 'Aucun gain garanti',
     desc: 'Le module enseigne des méthodes, pas des résultats. Ce que tu obtiens dépend de ton activité et des opportunités disponibles.',
   },
   {
-    icon: 'CONT',
     title: 'Contenu vérifiable',
     desc: `${CURRICULUM_TOTAL} jours, des modèles de prompts, un exercice et un critère de validation par jour. Rien d'autre n'est promis.`,
   },
@@ -288,7 +285,6 @@ export default function FormationIaPage() {
           <div className="mt-10 grid gap-6 sm:grid-cols-3">
             {trustModules.map((t) => (
               <div key={t.title} className="card flex items-start gap-4 bg-paper-2 p-6">
-                <span className="badge shrink-0">{t.icon}</span>
                 <div>
                   <h3 className="font-serif text-xl font-bold">{t.title}</h3>
                   <p className="mt-1 text-sm leading-relaxed text-ink-60">{t.desc}</p>
@@ -329,7 +325,7 @@ export default function FormationIaPage() {
             </Link>
             <Link
               href="/formations"
-              className="btn border-3 border-paper text-paper hover:bg-paper hover:text-ink"
+              className="btn border-3 border-paper bg-transparent text-paper hover:bg-paper hover:text-ink"
             >
               Revoir le catalogue
             </Link>

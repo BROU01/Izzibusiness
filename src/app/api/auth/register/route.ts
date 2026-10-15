@@ -1,107 +1,109 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase/server';
-import { createNotification, NOTIFICATION_TEMPLATES } from '@/lib/notifications';
-import { isSupabaseConfigured, createDemoUser, getDemoUser } from '@/lib/demo';
-import { ADHESION_FEE } from '@/lib/config';
+import { ERROR_CODES } from '@/lib/error-codes';
+import { apiData, apiError, internalError, readJson } from '@/lib/api-response';
+import { fieldErrors, registerSchema } from '@/lib/auth/schemas';
+import { toE164 } from '@/lib/auth/countries';
+import { authErrorCode } from '@/lib/auth/errors';
+import { getAuth } from '@/lib/auth';
+import { callFunction, query, queryOne } from '@/lib/db';
+import { clientIp, hitRateLimit } from '@/lib/rate-limit';
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { name, email, phone, referralCode } = body;
-
-    if (!name || !phone) {
-      return NextResponse.json(
-        { success: false, message: 'Nom et telephone requis' },
-        { status: 400 },
-      );
-    }
-
-    const cleanPhone = phone.replace(/\s+/g, '');
-
-    // ── Mode démo (Supabase non configuré) ──────────────────────────────
-    if (!isSupabaseConfigured()) {
-      const existing = getDemoUser(cleanPhone);
-      if (existing) {
-        return NextResponse.json({
-          success: true,
-          message: 'Compte existant, connexion reussie',
-          userId: existing.id,
-          demoMode: true,
-        });
-      }
-      // Résout le code de parrainage (code ou téléphone du parrain).
-      const user = createDemoUser(name, cleanPhone, referralCode || null);
-      return NextResponse.json({
-        success: true,
-        message: 'Compte cree avec succes (mode demonstration)',
-        userId: user.id,
-        demoMode: true,
-        adhesionFee: ADHESION_FEE,
-      });
-    }
-
-    // ── Mode production (Supabase configuré) ────────────────────────────
-    const supabase = createServerClient();
-
-    // Verifier si l'utilisateur existe deja
-    const { data: existingUser } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('phone', cleanPhone)
-      .single();
-
-    if (existingUser) {
-      return NextResponse.json({
-        success: true,
-        message: 'Compte existant, connexion reussie',
-        userId: existingUser.id,
-      });
-    }
-
-    // Creer le profil utilisateur
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .insert({
-        name,
-        email: email || null,
-        phone: cleanPhone,
-        role: 'user',
-      })
-      .select('id')
-      .single();
-
-    if (profileError) {
-      console.error('Error creating profile:', profileError);
-      return NextResponse.json(
-        { success: false, message: 'Erreur lors de la creation du compte' },
-        { status: 500 },
-      );
-    }
-
-    // Creer le wallet pour l'utilisateur
-    await supabase.from('wallets').insert({
-      user_id: profile.id,
-      balance: 0,
-      game_balance: 0,
-    });
-
-    // Envoyer la notification de bienvenue
-    await createNotification({
-      userId: profile.id,
-      ...NOTIFICATION_TEMPLATES.welcome(name),
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: 'Compte cree avec succes',
-      userId: profile.id,
-      adhesionFee: ADHESION_FEE,
-    });
-  } catch (error) {
-    console.error('Register error:', error);
-    return NextResponse.json(
-      { success: false, message: 'Erreur interne du serveur' },
-      { status: 500 },
+/**
+ * Inscription : pseudo, e-mail, pays, téléphone, parrain, mot de passe.
+ * Better Auth crée le compte et ouvre la session (cookie httpOnly), puis la
+ * fonction SQL create_member crée le profil et le wallet.
+ */
+export async function POST(request: Request) {
+  const parsed = registerSchema.safeParse(await readJson(request));
+  if (!parsed.success) {
+    const fields = fieldErrors(parsed.error);
+    return Response.json(
+      {
+        error: {
+          code: ERROR_CODES.INVALID_PAYLOAD,
+          message: Object.values(fields)[0] ?? 'Formulaire invalide.',
+          fields,
+        },
+      },
+      { status: 400 },
     );
   }
+
+  const { username, email, country, password, referralCode } = parsed.data;
+  const phone = toE164(country, parsed.data.phone);
+  if (!phone) {
+    return fieldError('phone', 'Numéro de téléphone invalide pour ce pays.', 400);
+  }
+
+  try {
+    if (!(await hitRateLimit(`register:${clientIp(request)}`, 5, 60 * 60))) {
+      return apiError(
+        ERROR_CODES.RATE_LIMITED,
+        'Trop d’inscriptions depuis cette connexion. Réessaie dans une heure.',
+        429,
+      );
+    }
+
+    // Unicité vérifiée avant création pour renvoyer un message précis ;
+    // les contraintes UNIQUE en base restent le garde-fou final.
+    const [byUsername, byEmail, byPhone] = await Promise.all([
+      queryOne('select 1 from "user" where username = $1', [username]),
+      queryOne('select 1 from "user" where email = $1', [email]),
+      queryOne('select 1 from profiles where phone = $1', [phone]),
+    ]);
+    if (byUsername) return fieldError('username', 'Ce pseudo est déjà pris.', 409);
+    if (byEmail) return fieldError('email', 'Cette adresse e-mail est déjà utilisée.', 409);
+    if (byPhone) return fieldError('phone', 'Ce numéro est déjà associé à un compte.', 409);
+
+    if (referralCode) {
+      const sponsor = await queryOne('select 1 from profiles where referral_code = $1', [
+        referralCode,
+      ]);
+      if (!sponsor) {
+        return fieldError('referralCode', 'Ce code de parrainage n’existe pas.', 400);
+      }
+    }
+
+    let userId: string;
+    try {
+      const result = await getAuth().api.signUpEmail({
+        body: { email, password, name: username, username },
+        headers: request.headers,
+      });
+      userId = result.user.id;
+    } catch (error) {
+      const code = authErrorCode(error);
+      if (code === 'USERNAME_IS_ALREADY_TAKEN') {
+        return fieldError('username', 'Ce pseudo est déjà pris.', 409);
+      }
+      if (code?.startsWith('USER_ALREADY_EXISTS')) {
+        return fieldError('email', 'Cette adresse e-mail est déjà utilisée.', 409);
+      }
+      throw error;
+    }
+
+    try {
+      await callFunction('create_member', [userId, phone, country, referralCode ?? null]);
+    } catch (error) {
+      // Profil impossible (numéro pris entre-temps…) : on n'abandonne pas un
+      // compte sans profil ni wallet. Les sessions partent avec (cascade).
+      await query('delete from "user" where id = $1', [userId]);
+      if (isUniqueViolation(error)) {
+        return fieldError('phone', 'Ce numéro est déjà associé à un compte.', 409);
+      }
+      throw error;
+    }
+
+    return apiData({ status: 'signed_in' }, 201);
+  } catch (error) {
+    return internalError('auth/register', error);
+  }
+}
+
+function fieldError(field: string, message: string, status: number) {
+  const code = status === 409 ? ERROR_CODES.CONFLICT : ERROR_CODES.INVALID_PAYLOAD;
+  return Response.json({ error: { code, message, fields: { [field]: message } } }, { status });
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === '23505';
 }

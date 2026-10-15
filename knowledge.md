@@ -37,7 +37,9 @@ README obsolète, aucun test automatisé, `console.*` dispersées dans le code.
 
 ## [stack] Décisions structurantes
 
-- Next.js 16 App Router + React 19 + Supabase : RLS active, client anonyme dans
-  le navigateur, service role réservé au serveur.
+- Next.js 16 App Router + React 19 + Neon PostgreSQL (`pg`) + Better Auth
+  (octobre 2026, remplace Supabase dont l'offre gratuite était saturée) :
+  le navigateur ne parle jamais à la base, chaque route API vérifie la
+  session et filtre par l'id du membre (pas de RLS).
 - npm (pas pnpm ni yarn) : verrous `package-lock.json`.
 - Règles métier centralisées dans `src/lib/config.ts`, jamais en dur dans l'UI.

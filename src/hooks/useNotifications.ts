@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { getDemoPhone } from '@/lib/demo-client';
 
 interface Notification {
   id: string;
@@ -23,8 +22,6 @@ export function useNotifications() {
     try {
       const params = new URLSearchParams({ limit: limit.toString() });
       if (unreadOnly) params.append('unread', 'true');
-      const demoPhone = getDemoPhone();
-      if (demoPhone) params.append('phone', demoPhone);
 
       const response = await fetch(`/api/notifications?${params}`);
       const data = await response.json();
@@ -46,7 +43,7 @@ export function useNotifications() {
       const response = await fetch('/api/notifications', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notificationId, phone: getDemoPhone() }),
+        body: JSON.stringify({ notificationId }),
       });
 
       const data = await response.json();
@@ -68,7 +65,7 @@ export function useNotifications() {
       const response = await fetch('/api/notifications', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ markAllRead: true, phone: getDemoPhone() }),
+        body: JSON.stringify({ markAllRead: true }),
       });
 
       const data = await response.json();
@@ -85,11 +82,9 @@ export function useNotifications() {
   // Supprimer une notification
   const deleteNotification = useCallback(async (notificationId: string) => {
     try {
-      const demoPhone = getDemoPhone();
-      const response = await fetch(
-        `/api/notifications?id=${notificationId}${demoPhone ? `&phone=${encodeURIComponent(demoPhone)}` : ''}`,
-        { method: 'DELETE' },
-      );
+      const response = await fetch(`/api/notifications?id=${encodeURIComponent(notificationId)}`, {
+        method: 'DELETE',
+      });
 
       const data = await response.json();
 
@@ -113,8 +108,6 @@ export function useNotifications() {
     void (async () => {
       try {
         const params = new URLSearchParams({ limit: '20' });
-        const demoPhone = getDemoPhone();
-        if (demoPhone) params.append('phone', demoPhone);
         const response = await fetch(`/api/notifications?${params}`);
         const data = await response.json();
         if (cancelled) return;

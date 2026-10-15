@@ -1,196 +1,188 @@
-const users = [
-  {
-    id: 1,
-    name: 'Aminata Koné',
-    email: 'aminata@email.com',
-    role: 'Vendeur',
-    status: 'Actif',
-    joined: '15 Jan 2026',
-  },
-  {
-    id: 2,
-    name: 'Moussa Traoré',
-    email: 'moussa@email.com',
-    role: 'Affilié',
-    status: 'Actif',
-    joined: '22 Jan 2026',
-  },
-  {
-    id: 3,
-    name: 'Sophie Diallo',
-    email: 'sophie@email.com',
-    role: 'Client',
-    status: 'Actif',
-    joined: '30 Jan 2026',
-  },
-  {
-    id: 4,
-    name: 'Jean Potier',
-    email: 'jean@email.com',
-    role: 'Vendeur',
-    status: 'Suspendu',
-    joined: '05 Fév 2026',
-  },
-  {
-    id: 5,
-    name: 'Fatou Camara',
-    email: 'fatou@email.com',
-    role: 'Client',
-    status: 'Actif',
-    joined: '12 Fév 2026',
-  },
+import Link from 'next/link';
+import PageHeader from '@/components/ui/PageHeader';
+import DataTable, { LoadError, formatDate } from '@/components/admin/DataTable';
+import { likePattern, load, requireAdminPage } from '../_lib/load';
+import { findCountry } from '@/lib/auth/countries';
+
+export const dynamic = 'force-dynamic';
+
+const PAGE_SIZE = 50;
+
+type Filter = 'all' | 'members' | 'non_members' | 'banned' | 'admins';
+const FILTERS: { id: Filter; label: string }[] = [
+  { id: 'all', label: 'Tous' },
+  { id: 'members', label: 'Adhérents' },
+  { id: 'non_members', label: 'Sans adhésion' },
+  { id: 'banned', label: 'Suspendus' },
+  { id: 'admins', label: 'Admins' },
 ];
 
-export default function AdminUsers() {
+// $1 : motif ilike (null = pas de recherche), $2 : filtre (identifiant de FILTERS).
+const USERS_WHERE = `where ($1::text is null
+         or u.username ilike $1 or u.email ilike $1 or p.phone ilike $1)
+    and case $2::text
+          when 'members' then p.is_member
+          when 'non_members' then not p.is_member
+          when 'banned' then p.is_banned
+          when 'admins' then p.role = 'admin'
+          else true
+        end`;
+
+/** Recherche, filtres et pagination des comptes. */
+export default async function AdminUsersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; filter?: string; page?: string }>;
+}) {
+  await requireAdminPage();
+  const params = await searchParams;
+  // Recherche passée en paramètre SQL ; %, _ et \ sont échappés par likePattern.
+  const q = (params.q ?? '').trim().slice(0, 60);
+  const filter = (FILTERS.find((f) => f.id === params.filter)?.id ?? 'all') as Filter;
+  const page = Math.max(1, Number.parseInt(params.page ?? '1', 10) || 1);
+
+  const { data, error } = await load<{
+    id: string;
+    username: string | null;
+    email: string | null;
+    phone: string;
+    country: string | null;
+    role: string;
+    is_member: boolean;
+    is_banned: boolean;
+    created_at: Date;
+    total: number;
+  }>(
+    `select p.id, u.username, u.email, p.phone, p.country, p.role, p.is_member, p.is_banned,
+            p.created_at, count(*) over ()::int as total
+       from profiles p
+       join "user" u on u.id = p.id
+      ${USERS_WHERE}
+      order by p.created_at desc
+      limit $3 offset $4`,
+    [q ? likePattern(q) : null, filter, PAGE_SIZE, (page - 1) * PAGE_SIZE],
+  );
+  const rows = data;
+  let total = rows[0]?.total ?? 0;
+  if (!error && rows.length === 0 && page > 1) {
+    // Page au-delà de la fin : le total n'est pas porté par une ligne.
+    const counted = await load<{ total: number }>(
+      `select count(*)::int as total
+         from profiles p
+         join "user" u on u.id = p.id
+        ${USERS_WHERE}`,
+      [q ? likePattern(q) : null, filter],
+    );
+    total = counted.data[0]?.total ?? 0;
+  }
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const href = (next: { filter?: Filter; page?: number }) => {
+    const sp = new URLSearchParams();
+    if (q) sp.set('q', q);
+    const f = next.filter ?? filter;
+    if (f !== 'all') sp.set('filter', f);
+    if ((next.page ?? 1) > 1) sp.set('page', String(next.page));
+    const s = sp.toString();
+    return `/admin/users${s ? `?${s}` : ''}`;
+  };
+
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '24px',
-        }}
-      >
-        <div>
-          <h1 style={{ fontSize: '24px', marginBottom: '4px' }}>Utilisateurs</h1>
-          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-            Gérez les comptes utilisateurs
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <input className="input" placeholder="Rechercher..." style={{ width: '200px' }} />
-        </div>
-      </div>
+      <PageHeader eyebrow="Administration" title="Comptes" description={`${total} compte(s).`} />
 
-      <div className="card">
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              <th
-                style={{
-                  textAlign: 'left',
-                  padding: '10px 0',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text-muted)',
-                }}
-              >
-                Utilisateur
-              </th>
-              <th
-                style={{
-                  textAlign: 'left',
-                  padding: '10px 0',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text-muted)',
-                }}
-              >
-                Rôle
-              </th>
-              <th
-                style={{
-                  textAlign: 'left',
-                  padding: '10px 0',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text-muted)',
-                }}
-              >
-                Statut
-              </th>
-              <th
-                style={{
-                  textAlign: 'left',
-                  padding: '10px 0',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text-muted)',
-                }}
-              >
-                Inscrit le
-              </th>
-              <th
-                style={{
-                  textAlign: 'right',
-                  padding: '10px 0',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  color: 'var(--text-muted)',
-                }}
-              >
-                Actions
-              </th>
+      <form className="mb-4 flex flex-wrap gap-2" role="search">
+        <label htmlFor="admin-user-search" className="sr-only">
+          Rechercher un compte
+        </label>
+        <input
+          id="admin-user-search"
+          name="q"
+          defaultValue={q}
+          placeholder="Pseudo, e-mail ou téléphone"
+          className="input max-w-sm flex-1"
+        />
+        {filter !== 'all' && <input type="hidden" name="filter" value={filter} />}
+        <button type="submit" className="btn btn-primary">
+          Rechercher
+        </button>
+      </form>
+
+      <nav aria-label="Filtres" className="mb-6 flex flex-wrap gap-2">
+        {FILTERS.map((f) => (
+          <Link
+            key={f.id}
+            href={href({ filter: f.id })}
+            aria-current={filter === f.id ? 'page' : undefined}
+            className={`border-3 border-ink px-3 py-1.5 font-mono text-xs font-bold uppercase ${filter === f.id ? 'bg-acid' : 'bg-paper'}`}
+          >
+            {f.label}
+          </Link>
+        ))}
+      </nav>
+
+      {error && <LoadError />}
+
+      {!error && rows.length === 0 ? (
+        <p className="border-3 border-dashed border-ink px-4 py-6 text-center text-ink-70">
+          Aucun compte ne correspond.
+        </p>
+      ) : (
+        <DataTable
+          headers={[
+            { label: 'Pseudo' },
+            { label: 'E-mail' },
+            { label: 'Téléphone' },
+            { label: 'Pays' },
+            { label: 'Statut' },
+            { label: 'Inscrit le' },
+          ]}
+        >
+          {rows.map((u) => (
+            <tr key={u.id}>
+              <td>
+                <Link
+                  href={`/admin/users/${u.id}`}
+                  className="font-semibold underline underline-offset-4"
+                >
+                  {u.username ? `@${u.username}` : 'sans pseudo'}
+                </Link>
+                {u.role === 'admin' && <span className="badge badge-sky ml-2">Admin</span>}
+              </td>
+              <td>{u.email ?? '—'}</td>
+              <td className="font-mono">{u.phone}</td>
+              <td>{findCountry(u.country ?? '')?.name ?? '—'}</td>
+              <td className="flex flex-wrap gap-1">
+                {u.is_banned && <span className="badge badge-flame">Suspendu</span>}
+                {u.is_member ? (
+                  <span className="badge badge-grass">Adhérent</span>
+                ) : (
+                  <span className="badge">Inscrit</span>
+                )}
+              </td>
+              <td className="whitespace-nowrap">{formatDate(u.created_at, false)}</td>
             </tr>
-          </thead>
-          <tbody>
-            {users.map((user) => (
-              <tr key={user.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={{ padding: '12px 0' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '50%',
-                        background: 'var(--accent-light)',
-                        color: 'var(--accent)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 700,
-                        fontSize: '12px',
-                      }}
-                    >
-                      {user.name.charAt(0)}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '13px', fontWeight: 600 }}>{user.name}</div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                        {user.email}
-                      </div>
-                    </div>
-                  </div>
-                </td>
-                <td style={{ padding: '12px 0' }}>
-                  <span className="badge">{user.role}</span>
-                </td>
-                <td style={{ padding: '12px 0' }}>
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      padding: '4px 10px',
-                      borderRadius: 'var(--radius-full)',
-                      background: user.status === 'Actif' ? '#dcfce7' : '#fee2e2',
-                      color: user.status === 'Actif' ? 'var(--success)' : 'var(--error)',
-                    }}
-                  >
-                    {user.status}
-                  </span>
-                </td>
-                <td style={{ padding: '12px 0', fontSize: '13px', color: 'var(--text-muted)' }}>
-                  {user.joined}
-                </td>
-                <td style={{ padding: '12px 0', textAlign: 'right' }}>
-                  <button
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      fontSize: '13px',
-                      color: 'var(--accent)',
-                    }}
-                  >
-                    Gérer
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </DataTable>
+      )}
+
+      {pages > 1 && (
+        <nav aria-label="Pagination" className="mt-6 flex items-center gap-3">
+          {page > 1 && (
+            <Link href={href({ page: page - 1 })} className="btn btn-ghost">
+              Page précédente
+            </Link>
+          )}
+          <span className="font-mono text-sm">
+            Page {page} / {pages}
+          </span>
+          {page < pages && (
+            <Link href={href({ page: page + 1 })} className="btn btn-ghost">
+              Page suivante
+            </Link>
+          )}
+        </nav>
+      )}
     </div>
   );
 }

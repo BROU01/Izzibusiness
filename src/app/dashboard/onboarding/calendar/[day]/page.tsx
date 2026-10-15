@@ -13,8 +13,7 @@ import {
   useCompletedDays,
   isDayUnlocked,
   toggleDayCompleted,
-  syncFromSupabase,
-  isSupabaseProgressEnabled,
+  syncFromServer,
 } from '@/lib/curriculum-progress';
 import CompletionBurst from '@/components/CompletionBurst';
 
@@ -23,8 +22,8 @@ import CompletionBurst from '@/components/CompletionBurst';
  *
  * Accès protégé par le verrou séquentiel (jour N ouvert si jour N-1 complété).
  * Si le jour est verrouillé, l'écran reste honnête : on explique comment
- * ouvrir l'étape, sans montrer le contenu. Progression dual-mode (localStorage
- * en démo, table program_progress + RLS en production). La complétion
+ * ouvrir l'étape, sans montrer le contenu. Progression lue et écrite via
+ * /api/program-progress (table program_progress, verrou vérifié côté serveur). La complétion
  * déclenche une salve de confettis CSS (désactivée en reduced-motion).
  */
 
@@ -53,7 +52,7 @@ function CopyButton({ text }: { text: string }) {
 
   const label =
     state === 'copied'
-      ? 'Copié ✓'
+      ? 'Copié'
       : state === 'failed'
         ? 'Copie impossible — sélectionne le texte'
         : 'Copier le prompt';
@@ -96,11 +95,9 @@ export default function DayDetailPage() {
 
   // ── Hooks : TOUS appelés avant tout early return (rules-of-hooks) ──
 
-  // Mode production : recharge la progression distante au montage.
+  // Recharge la progression du compte depuis le serveur au montage.
   useEffect(() => {
-    if (isSupabaseProgressEnabled()) {
-      void syncFromSupabase();
-    }
+    void syncFromServer();
   }, []);
 
   // Confettis : une salve par transition « non complété -> complété ».
@@ -216,7 +213,7 @@ export default function DayDetailPage() {
               ~{dayData.activity.durationMin} min
             </p>
             {/* Contenu : mock. Le lecteur vidéo / le texte d'activité seront
-                branchés sur Supabase. Aucun média fictif n'est affiché. */}
+                branchés sur la base. Aucun média fictif n'est affiché. */}
             <p className="mt-4 border-2 border-dashed border-ink/40 bg-paper-2 p-4 text-sm text-ink-60">
               Le contenu de cette activité sera disponible quand le programme sera branché sur les
               données de ton compte. En attendant, l&apos;exercice et le modèle de prompt ci-dessous
@@ -359,7 +356,7 @@ export default function DayDetailPage() {
                     rel="noopener noreferrer"
                     className="text-sm font-bold underline decoration-2 underline-offset-2"
                   >
-                    {r.name} ↗
+                    {r.name}
                   </a>
                   <p className="mt-1 text-xs text-ink-60">{r.desc}</p>
                 </li>
@@ -409,7 +406,7 @@ export default function DayDetailPage() {
                 href={`/dashboard/onboarding/calendar/${dayData.day - 1}`}
                 className="btn btn-secondary"
               >
-                ← Jour {dayData.day - 1}
+                Jour précédent ({dayData.day - 1})
               </Link>
             ) : (
               <span />
@@ -424,7 +421,7 @@ export default function DayDetailPage() {
                     : "Verrouillé — termine d'abord les jours précédents"
                 }
               >
-                Jour {dayData.day + 1} →
+                Jour suivant ({dayData.day + 1})
               </Link>
             ) : (
               <Link href="/dashboard/onboarding/calendar" className="btn btn-primary">
