@@ -12,6 +12,17 @@ import {
   formatFcfa,
 } from '@/lib/config';
 import { createClient } from '@/lib/supabase/server';
+import {
+  FaqAccordion,
+  HeroItem,
+  HeroStagger,
+  Highlight,
+  LandingMotion,
+  Reveal,
+  ServicesGrid,
+  StampCard,
+  StepsTimeline,
+} from '@/components/landing/motion';
 
 // Page publique : tout visiteur peut lire. Les fonctionnalités (marché,
 // formations, missions, jeux, parrainage) sont réservées aux comptes
@@ -131,37 +142,50 @@ export default async function HomePage() {
     ? { href: '/dashboard', label: 'Ouvrir mon espace' }
     : { href: '/register', label: 'Créer mon compte gratuit' };
 
+  const services = SERVICES.map((s) => ({
+    title: s.title,
+    desc: s.desc,
+    note: s.note,
+    href: signedIn ? s.href : `/login?redirect=${encodeURIComponent(s.href)}`,
+    cta: signedIn ? `Ouvrir : ${s.title}` : 'Se connecter pour accéder',
+  }));
+
   return (
-    <>
+    <LandingMotion>
       <Navbar />
       <main className="bg-paper text-ink">
         {/* Hero */}
         <section className="border-b-3 border-ink" aria-labelledby="hero-title">
           <div className="container grid items-end gap-10 py-14 md:grid-cols-[1.5fr_1fr] md:py-20 [&>*]:min-w-0">
-            <div>
-              <p className="eyebrow">Apprendre · Agir · Encaisser</p>
-              <h1
-                id="hero-title"
-                className="mt-4 text-[2.4rem] leading-[1.02] sm:text-5xl md:text-7xl"
-              >
-                Formations, missions, jeux et{' '}
-                <span className="bg-acid px-1 box-decoration-clone">wallet Mobile Money</span>, au
-                même endroit.
-              </h1>
-              <p className="mt-6 max-w-xl text-lg text-ink-70">
-                Lis tout ce qu’il faut savoir ici. Les services s’ouvrent dès que tu as un compte.
-              </p>
-              <div className="mt-8 flex flex-wrap gap-4">
+            <HeroStagger>
+              <HeroItem>
+                <p className="eyebrow">Apprendre · Agir · Encaisser</p>
+              </HeroItem>
+              <HeroItem>
+                <h1
+                  id="hero-title"
+                  className="mt-4 text-[2.4rem] leading-[1.02] sm:text-5xl md:text-7xl"
+                >
+                  Formations, missions, jeux et <Highlight>wallet Mobile Money</Highlight>, au même
+                  endroit.
+                </h1>
+              </HeroItem>
+              <HeroItem>
+                <p className="mt-6 max-w-xl text-lg text-ink-70">
+                  Lis tout ce qu’il faut savoir ici. Les services s’ouvrent dès que tu as un compte.
+                </p>
+              </HeroItem>
+              <HeroItem className="mt-8 flex flex-wrap gap-4">
                 <Link href={primary.href} className="btn btn-primary">
                   {primary.label}
                 </Link>
                 <Link href="#comment-ca-marche" className="btn btn-ghost">
                   Voir comment ça marche
                 </Link>
-              </div>
-            </div>
+              </HeroItem>
+            </HeroStagger>
 
-            <aside className="card" aria-label="Les montants à connaître">
+            <StampCard className="card" label="Les montants à connaître">
               <p className="eyebrow">Avant de t’engager</p>
               <dl className="mt-4 divide-y-2 divide-ink/15 font-mono text-sm">
                 <div className="flex justify-between gap-4 py-2">
@@ -185,7 +209,7 @@ export default async function HomePage() {
                   <dd className="font-bold">{feePercent}</dd>
                 </div>
               </dl>
-            </aside>
+            </StampCard>
           </div>
         </section>
 
@@ -196,32 +220,17 @@ export default async function HomePage() {
           aria-labelledby="services-title"
         >
           <div className="container section">
-            <p className="eyebrow">[ 01 ] Services</p>
-            <h2 id="services-title" className="mt-3 text-4xl md:text-5xl">
-              Ce que tu trouves ici.
-            </h2>
-            <p className="mt-3 max-w-2xl text-ink-70">
-              Chaque service s’ouvre après connexion
-              {signedIn ? ' : tu es connecté, choisis où aller.' : '.'}
-            </p>
-            <ul className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {SERVICES.map((s) => (
-                <li key={s.title} className="card flex flex-col">
-                  <h3 className="text-2xl">{s.title}</h3>
-                  <p className="mt-2 flex-1 text-ink-70">{s.desc}</p>
-                  <p className="mt-4 border-t-2 border-ink/15 pt-3 font-mono text-xs font-bold uppercase tracking-wide">
-                    {s.note}
-                  </p>
-                  <Link
-                    href={signedIn ? s.href : `/login?redirect=${encodeURIComponent(s.href)}`}
-                    className="mt-4 font-bold underline underline-offset-4"
-                  >
-                    {signedIn ? `Ouvrir : ${s.title}` : `Se connecter pour accéder`}
-                    <span className="sr-only"> à {s.title}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <Reveal>
+              <p className="eyebrow">[ 01 ] Services</p>
+              <h2 id="services-title" className="mt-3 text-4xl md:text-5xl">
+                Ce que tu trouves ici.
+              </h2>
+              <p className="mt-3 max-w-2xl text-ink-70">
+                Chaque service s’ouvre après connexion
+                {signedIn ? ' : tu es connecté, choisis où aller.' : '.'}
+              </p>
+            </Reveal>
+            <ServicesGrid items={services} />
           </div>
         </section>
 
@@ -232,21 +241,13 @@ export default async function HomePage() {
           aria-labelledby="how-title"
         >
           <div className="container section">
-            <p className="eyebrow !text-acid">[ 02 ] Comment ça marche</p>
-            <h2 id="how-title" className="mt-3 text-4xl md:text-5xl">
-              Quatre étapes, dans l’ordre.
-            </h2>
-            <ol className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-              {STEPS.map((step, i) => (
-                <li key={step.title} className="border-3 border-paper p-6">
-                  <span className="font-mono text-3xl font-bold text-acid">
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
-                  <h3 className="mt-3 text-2xl">{step.title}</h3>
-                  <p className="mt-2 text-paper/80">{step.desc}</p>
-                </li>
-              ))}
-            </ol>
+            <Reveal>
+              <p className="eyebrow !text-acid">[ 02 ] Comment ça marche</p>
+              <h2 id="how-title" className="mt-3 text-4xl md:text-5xl">
+                Quatre étapes, dans l’ordre.
+              </h2>
+            </Reveal>
+            <StepsTimeline steps={STEPS} />
             {!signedIn && (
               <Link href="/register" className="btn btn-primary mt-10">
                 Commencer par l’étape 1
@@ -262,7 +263,7 @@ export default async function HomePage() {
           aria-labelledby="faq-title"
         >
           <div className="container section grid gap-10 lg:grid-cols-[1fr_2fr]">
-            <div>
+            <Reveal>
               <p className="eyebrow">[ 03 ] FAQ</p>
               <h2 id="faq-title" className="mt-3 text-4xl md:text-5xl">
                 Questions fréquentes.
@@ -274,30 +275,15 @@ export default async function HomePage() {
                 </Link>
                 .
               </p>
-            </div>
-            <div className="border-t-3 border-ink">
-              {FAQ.map((item) => (
-                <details key={item.q} className="group border-b-3 border-ink">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-5 text-xl font-bold [&::-webkit-details-marker]:hidden">
-                    {item.q}
-                    <span
-                      aria-hidden="true"
-                      className="font-mono text-2xl transition-transform group-open:rotate-45"
-                    >
-                      +
-                    </span>
-                  </summary>
-                  <p className="pb-5 text-ink-70">{item.a}</p>
-                </details>
-              ))}
-            </div>
+            </Reveal>
+            <FaqAccordion items={FAQ} />
           </div>
         </section>
 
         {/* Appel final */}
         {!signedIn && (
           <section className="bg-acid" aria-labelledby="cta-title">
-            <div className="container section text-center">
+            <Reveal className="container section text-center">
               <h2 id="cta-title" className="text-4xl md:text-5xl">
                 Ton compte est gratuit.
               </h2>
@@ -307,11 +293,11 @@ export default async function HomePage() {
               <Link href="/register" className="btn btn-dark mt-8">
                 Créer mon compte gratuit
               </Link>
-            </div>
+            </Reveal>
           </section>
         )}
       </main>
       <Footer />
-    </>
+    </LandingMotion>
   );
 }
